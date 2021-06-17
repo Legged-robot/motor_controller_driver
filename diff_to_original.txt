@@ -1,0 +1,4 @@
+syscalls.c - errno and stack pointer not defined in new version compared to original
+sysmem.c - _sbrk function different
+system_stm32f4xx.c - minor differences and additional defines
+motorcontrol_ve2.ioc - SWO pin is not being utilised 
