@@ -68,9 +68,9 @@ void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
+  sConfigOC.OCMode = TIM_OCMODE_PWM1; //active while counter<<CCR register
+  sConfigOC.Pulse = 0;  //CCR registers
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;  //active gives polarity low
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;

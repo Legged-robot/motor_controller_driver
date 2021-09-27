@@ -25,6 +25,9 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 		cal->start_count = loop_count;
 	}
 	cal->time = (float)(loop_count - cal->start_count)*DT;
+	if (cal->time<0){
+		printf("order_phases: cal->time<0!!! WARNING!!! \r\n");
+	}
 
     if(cal->time < T1){
         // Set voltage angle to zero, wait for rotor position to settle
@@ -79,11 +82,14 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 		}
 
 	cal->time = (float)(loop_count - cal->start_count)*DT;
-
+	if (cal->time<0){
+		printf("calibrate_encoder: cal->time<0!!! WARNING!!! \r\n");
+	}
     if(cal->time < T1){
         // Set voltage angle to zero, wait for rotor position to settle
         cal->theta_ref = 0;//W_CAL*cal->time;
         cal->cal_position.elec_angle = cal->theta_ref;
+        cal->cal_position.elec_velocity = 0;
         controller->i_d_des = I_CAL;
         controller->i_q_des = 0.0f;
         commutate(controller, &cal->cal_position);

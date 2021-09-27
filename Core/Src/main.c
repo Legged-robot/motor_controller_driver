@@ -48,6 +48,7 @@
 	#include "foc.h"
 	#include "math_ops.h"
 	#include "calibration.h"
+	#include "observer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -150,7 +151,7 @@ int main(void)
  	  if(E_ZERO==-1){E_ZERO = 0;}
  	  if(M_ZERO==-1){M_ZERO = 0;}
  	  if(isnan(I_BW) || I_BW==-1){I_BW = 1000;}
- 	  if(isnan(I_MAX) || I_MAX ==-1){I_MAX=40;}
+ 	  if(isnan(I_MAX) || I_MAX ==-1){I_MAX=30;}
  	  if(isnan(I_FW_MAX) || I_FW_MAX ==-1){I_FW_MAX=0;}
  	  if(CAN_ID==-1){CAN_ID = 1;}
  	  if(CAN_MASTER==-1){CAN_MASTER = 0;}
@@ -158,8 +159,8 @@ int main(void)
  	  if(isnan(R_NOMINAL) || R_NOMINAL==-1){R_NOMINAL = 0.0f;}
  	  if(isnan(TEMP_MAX) || TEMP_MAX==-1){TEMP_MAX = 125.0f;}
  	  if(isnan(I_MAX_CONT) || I_MAX_CONT==-1){I_MAX_CONT = 14.0f;}
- 	  if(isnan(I_CAL)||I_CAL==-1){I_CAL = 5.0f;}
- 	  if(isnan(PPAIRS) || PPAIRS==-1){PPAIRS = 21.0f;}
+ 	  if(isnan(I_CAL)||I_CAL==-1){I_CAL = 3.0f;}
+ 	  if(isnan(PPAIRS) || PPAIRS==-1){PPAIRS = 28.0f;}
  	  if(isnan(GR) || GR==-1){GR = 1.0f;}
  	  if(isnan(KT) || KT==-1){KT = 1.0f;}
  	  if(isnan(KP_MAX) || KP_MAX==-1){KP_MAX = 500.0f;}
@@ -208,17 +209,17 @@ int main(void)
  	  drv_write_DCR(drv, 0x0, DIS_GDF_EN, 0x0, PWM_MODE_3X, 0x0, 0x0, 0x0, 0x0, 0x1);
  	  HAL_Delay(1);
  	  drv_write_CSACR(drv, 0x0, 0x1, 0x0, CSA_GAIN_40, 0x0, 0x1, 0x1, 0x1, SEN_LVL_1_0);
- 	  HAL_Delay(1);
+ 	  HAL_Delay(10);
  	  zero_current(&controller);
  	  HAL_Delay(1);
  	  drv_write_CSACR(drv, 0x0, 0x1, 0x0, CSA_GAIN_40, 0x1, 0x0, 0x0, 0x0, SEN_LVL_1_0);
  	  HAL_Delay(1);
- 	  drv_write_OCPCR(drv, TRETRY_50US, DEADTIME_50NS, OCP_DEG_8US, OCP_DEG_8US, VDS_LVL_1_88);
+ 	  drv_write_OCPCR(drv, TRETRY_50US, DEADTIME_50NS, OCP_NONE, OCP_DEG_8US, VDS_LVL_1_88); //TODO: increase deadtime
  	  HAL_Delay(1);
  	  drv_disable_gd(drv);
  	  HAL_Delay(1);
  	  //drv_enable_gd(drv);   */
- 	  printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_a_offset, controller.adc_b_offset);
+ 	  printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_CH_IA_offset, controller.adc_CH_IB_offset);
 
  	  /* Turn on PWM */
  	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
@@ -236,7 +237,7 @@ int main(void)
  	  NVIC_SetPriority(CAN_ISR, 3);
 
  	  /* Start the FSM */
- 	  state.state = MENU_MODE;
+ 	  state.state = SETUP_MODE;
  	  state.next_state = MENU_MODE;
  	  state.ready = 1;
 
@@ -257,6 +258,7 @@ int main(void)
 	  if(state.state==MOTOR_MODE){
 	  //	  printf("%.2f %.2f %.2f %.2f %.2f\r\n", controller.i_a, controller.i_b, controller.i_d, controller.i_q, controller.dtheta_elec);
 	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

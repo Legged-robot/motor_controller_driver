@@ -53,7 +53,7 @@
 				 preference_writer_flush(&prefs);
 				 preference_writer_close(&prefs);
 				 preference_writer_load(prefs);
-				 update_fsm(fsmstate, 27);
+				 update_fsm(fsmstate, MENU_CMD);
 			 }
 
 			 break;
@@ -111,7 +111,7 @@
 			case CALIBRATION_MODE:
 				//printf("Entering Calibration Mode\r\n");
 				/* zero out all calibrations before starting */
-
+				controller.loop_count = 0; // TODO: supsicion on loop_counter overflow, might be overprotecting
 				comm_encoder_cal.done_cal = 0;
 				comm_encoder_cal.done_ordering = 0;
 				comm_encoder_cal.started = 0;
@@ -194,14 +194,15 @@
 				case ZERO_CMD:
 					comm_encoder.m_zero = 0;
 					ps_sample(&comm_encoder, DT);
-					HAL_Delay(20);
+//					HAL_Delay(29); //stuck in here since this is executed inside TIM1 interrupt routine
 					M_ZERO = comm_encoder.count;
 					//if (!prefs.ready()) prefs.open();
 					//    prefs.flush();                                                  // Write new prefs to flash
 					//    prefs.close();
 					//    prefs.load();
 					//spi.SetMechOffset(M_OFFSET);
-					printf("\n\r  Saved new zero position:  %.4f\n\r\n\r", M_ZERO);
+					printf("\n\r  Saved new zero position:  %d \n\r\n\r", M_ZERO);
+					enter_menu_state(); // go back to menu state
 					break;
 				}
 			break;
@@ -239,7 +240,7 @@
 	    printf(" c - Calibrate Encoder\n\r");
 	    printf(" s - Setup\n\r");
 	    printf(" e - Display Encoder\n\r");
-	    printf(" z - Set Zero Position\n\r");
+	    printf(" z - Set Zero Position and zero out the stored values(reset MCU afterwards)\n\r");
 	    printf(" esc - Exit to Menu\n\r");
 
 	    //gpio.led->write(0);
@@ -337,7 +338,7 @@
 			 printf("V_MAX set to %f\r\n", V_MAX);
 			 break;
 		 default:
-			 printf("\n\r '%c' Not a valid command prefix\n\r\n\r", fsmstate->cmd_buff);
+			 printf("\n\r '%s' Not a valid command prefix\n\r\n\r", fsmstate->cmd_buff);
 			 break;
 
 		 }

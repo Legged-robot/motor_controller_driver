@@ -30,7 +30,7 @@ float roundf(float x){
   */
 void limit_norm(float *x, float *y, float limit){
     /// Scales the lenght of vector (x, y) to be <= limit ///
-    float norm = sqrtf(*x * *x + *y * *y);
+    float norm = sqrtf(*x * *x + *y * *y); //length of resulting vector - hypotenuse
     if(norm > limit){
         *x = *x * limit/norm;
         *y = *y * limit/norm;

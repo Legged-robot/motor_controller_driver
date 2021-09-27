@@ -12,6 +12,7 @@
 #include "math_ops.h"
 #include "hw_config.h"
 #include "user_config.h"
+#include "observer.h"
 
 void set_dtc(ControllerStruct *controller){
 
@@ -25,6 +26,7 @@ void set_dtc(ControllerStruct *controller){
 		dtc_u = 1.0f - controller->dtc_u;
 		dtc_v = 1.0f - controller->dtc_v;
 		dtc_w = 1.0f - controller->dtc_w;
+
 	}
 	/* Handle phase order swapping so that voltage/current/torque match encoder direction */
 	if(!PHASE_ORDER){
@@ -37,6 +39,7 @@ void set_dtc(ControllerStruct *controller){
 		__HAL_TIM_SET_COMPARE(&TIM_PWM, TIM_CH_W, ((TIM_PWM.Instance->ARR))*dtc_v);
 		__HAL_TIM_SET_COMPARE(&TIM_PWM, TIM_CH_V, ((TIM_PWM.Instance->ARR))*dtc_w);
 	}
+	// dump_state();
 }
 
 void analog_sample (ControllerStruct *controller){
@@ -45,24 +48,28 @@ void analog_sample (ControllerStruct *controller){
 	if(!PHASE_ORDER){
 		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IA);
 		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IB);
+        
+        controller->i_a = I_SCALE*(float)(controller->adc_a_raw - controller->adc_CH_IA_offset);    // Calculate phase currents from ADC readings
+        controller->i_b = I_SCALE*(float)(controller->adc_b_raw - controller->adc_CH_IB_offset);
 		//adc_ch_ic = ADC_CH_IC;
 	}
 	else{
 		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IB);
 		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IA);
+
+        controller->i_a = I_SCALE*(float)(controller->adc_a_raw - controller->adc_CH_IB_offset);    // Calculate phase currents from ADC readings
+        controller->i_b = I_SCALE*(float)(controller->adc_b_raw - controller->adc_CH_IA_offset);
+
 		//adc_ch_ic = ADC_CH_IB;
 	}
 
+    controller->i_c = -controller->i_a - controller->i_b;
 
 	HAL_ADC_Start(&ADC_CH_MAIN);
 	HAL_ADC_PollForConversion(&ADC_CH_MAIN, HAL_MAX_DELAY);
 
 	controller->adc_vbus_raw = HAL_ADC_GetValue(&ADC_CH_VBUS);
 	controller->v_bus = (float)controller->adc_vbus_raw*V_SCALE;
-
-    controller->i_a = I_SCALE*(float)(controller->adc_a_raw - controller->adc_a_offset);    // Calculate phase currents from ADC readings
-    controller->i_b = I_SCALE*(float)(controller->adc_b_raw - controller->adc_b_offset);
-    controller->i_c = -controller->i_a - controller->i_b;
 
 }
 
@@ -98,19 +105,20 @@ void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, flo
      u,v,w amplitude = v_bus for full modulation depth */
 
     float v_offset = (fminf3(u, v, w) + fmaxf3(u, v, w))*0.5f;
-    float v_midpoint = .5f*(DTC_MAX+DTC_MIN);
+    float dtc_midpoint = .5f*(DTC_MAX+DTC_MIN);
+    float dtc_half_range = .5f*(DTC_MAX-DTC_MIN); //must be a positive values
 
-    *dtc_u = fast_fminf(fast_fmaxf((.5f*(u -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
-    *dtc_v = fast_fminf(fast_fmaxf((.5f*(v -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
-    *dtc_w = fast_fminf(fast_fmaxf((.5f*(w -v_offset)*OVERMODULATION/v_max + v_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_u = fast_fminf(fast_fmaxf(((OVERMODULATION*(u -v_offset)/v_max)*dtc_half_range + dtc_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_v = fast_fminf(fast_fmaxf(((OVERMODULATION*(v -v_offset)/v_max)*dtc_half_range + dtc_midpoint ), DTC_MIN), DTC_MAX);
+    *dtc_w = fast_fminf(fast_fmaxf(((OVERMODULATION*(w -v_offset)/v_max)*dtc_half_range + dtc_midpoint ), DTC_MIN), DTC_MAX);
 
     }
 
 void zero_current(ControllerStruct *controller){
 	/* Measure zero-current ADC offset */
 
-    int adc_a_offset = 0;
-    int adc_b_offset = 0;
+    int adc_CH_IA_offset = 0;
+    int adc_CH_IB_offset = 0;
     int n = 1000;
     controller->dtc_u = 0.f;
     controller->dtc_v = 0.f;
@@ -119,11 +127,11 @@ void zero_current(ControllerStruct *controller){
 
     for (int i = 0; i<n; i++){               // Average n samples
     	analog_sample(controller);
-    	adc_a_offset +=  controller->adc_a_raw;
-    	adc_b_offset += controller->adc_b_raw;
+    	adc_CH_IA_offset +=  controller->adc_a_raw;
+    	adc_CH_IB_offset += controller->adc_b_raw;
      }
-    controller->adc_a_offset = adc_a_offset/n;
-    controller->adc_b_offset = adc_b_offset/n;
+    controller->adc_CH_IA_offset = adc_CH_IA_offset/n;
+    controller->adc_CH_IB_offset = adc_CH_IB_offset/n;
 
     }
 
@@ -152,7 +160,9 @@ void reset_foc(ControllerStruct *controller){
     controller->i_q_des = 0;
     controller->i_d = 0;
     controller->i_q = 0;
+    controller->i_d_filt = 0;
     controller->i_q_filt = 0;
+    controller->v_bus_filt = 0;
     controller->q_int = 0;
     controller->d_int = 0;
     controller->v_q = 0;
@@ -226,20 +236,26 @@ void field_weaken(ControllerStruct *controller)
 void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 {
 	/* Do Field Oriented Control */
+        /* TODO: remove printing of current values for commutations*/
+        // printf("i_a: %.2f ib: %.2f i_d: %.2f i_q: %.2f dtheta_elec: %.2f\r\n", controller->i_a, controller->i_b, controller->i_d, controller->i_q, controller->dtheta_elec);
 
 		controller->theta_elec = encoder->elec_angle;
 		controller->dtheta_elec = encoder->elec_velocity;
-		controller->dtheta_mech = encoder->velocity*GR;
+		controller->dtheta_mech = encoder->velocity/GR;
 		controller->theta_mech = encoder->angle_multiturn[0]/GR;
-
+        controller->foc_i_a = controller->i_a;
+        controller->foc_i_b = controller->i_b;
+        controller->foc_i_c = controller->i_c;
        /// Commutation  ///
-       dq0(controller->theta_elec, controller->i_a, controller->i_b, controller->i_c, &controller->i_d, &controller->i_q);    //dq0 transform on currents - 3.8 us
+       dq0(controller->theta_elec, controller->foc_i_a, controller->foc_i_b, controller->foc_i_c, &controller->i_d, &controller->i_q);    //dq0 transform on currents - 3.8 us
 
        controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
        controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
+       
+       /* Saturate voltage at the beggining of the callibration loops*/
        controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
 
-       controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3;
+       controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //sqrt(1/3)
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
 
        limit_norm(&controller->i_d_des, &controller->i_q_des, controller->i_max);	// 2.3 us
@@ -258,19 +274,19 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        controller->v_d = fast_fmaxf(fast_fminf(controller->v_d, controller->v_max), -controller->v_max);
 
        controller->d_int += controller->k_d*controller->ki_d*i_d_error;
-       controller->d_int = fast_fmaxf(fast_fminf(controller->d_int, controller->v_max), -controller->v_max);
-       float vq_max = sqrtf(controller->v_max*controller->v_max - controller->v_d*controller->v_d);
+       controller->d_int = fast_fmaxf(fast_fminf(controller->d_int, controller->v_max), -controller->v_max); // | d_int |<= v_max  
+       float vq_max = sqrtf(controller->v_max*controller->v_max - controller->v_d*controller->v_d); //prioritaze v_d (based on the vector summation :v_max -hypotenuse)
 
        controller->v_q = controller->k_q*i_q_error + controller->q_int + v_q_ff;
        controller->q_int += controller->k_q*controller->ki_q*i_q_error;
        controller->q_int = fast_fmaxf(fast_fminf(controller->q_int, controller->v_max), -controller->v_max);
-       controller->v_ref = sqrtf(controller->v_d*controller->v_d + controller->v_q*controller->v_q);
+       controller->v_ref = sqrtf(controller->v_d*controller->v_d + controller->v_q*controller->v_q); // used for field weakening
        controller->v_q = fast_fmaxf(fast_fminf(controller->v_q, vq_max), -vq_max);
 
        limit_norm(&controller->v_d, &controller->v_q, controller->v_max);
 
        abc(controller->theta_elec + 1.5f*DT*controller->dtheta_elec, controller->v_d, controller->v_q, &controller->v_u, &controller->v_v, &controller->v_w); //inverse dq0 transform on voltages
-       svm(controller->v_max, controller->v_u, controller->v_v, controller->v_w, &controller->dtc_u, &controller->dtc_v, &controller->dtc_w); //space vector modulation
+       svm(controller->v_bus, controller->v_u, controller->v_v, controller->v_w, &controller->dtc_u, &controller->dtc_v, &controller->dtc_w); //space vector modulation
 
        set_dtc(controller);
 

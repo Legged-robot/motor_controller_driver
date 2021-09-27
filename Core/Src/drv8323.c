@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include "usart.h"
 #include "hw_config.h"
+#include "observer.h"
+
+static int state_dumped;
 
 uint16_t drv_spi_write(DRVStruct * drv, uint16_t val){
 	drv->spi_tx_word = val;
@@ -53,11 +56,11 @@ void drv_write_CSACR(DRVStruct drv, int CSA_FET, int VREF_DIV, int LS_REF, int C
 	uint16_t val = (CSACR<<11) | (CSA_FET<<10) | (VREF_DIV<<9) | (LS_REF<<8) | (CSA_GAIN<<6) | (DIS_SEN<<5) | (CSA_CAL_A<<4) | (CSA_CAL_B<<3) | (CSA_CAL_C<<2) | SEN_LVL;
 	drv_spi_write(&drv, val);
 }
-void drv_enable_gd(DRVStruct drv){
+void drv_enable_gd(DRVStruct drv){	//remove Hi-Z state from all MOSFETs
 	uint16_t val = (drv_read_register(drv, DCR)) & (~(0x1<<2));
 	drv_write_register(drv, DCR, val);
 }
-void drv_disable_gd(DRVStruct drv){
+void drv_disable_gd(DRVStruct drv){		//put all MOSFETs in the Hi-Z state
 	uint16_t val = (drv_read_register(drv, DCR)) | (0x1<<2);
 	drv_write_register(drv, DCR, val);
 }
@@ -65,33 +68,41 @@ void drv_calibrate(DRVStruct drv){
 	uint16_t val = (0x1<<4) + (0x1<<3) + (0x1<<2);
 	drv_write_register(drv, CSACR, val);
 }
+
+void handle_dump_state(){
+	if (!state_dumped){
+		dump_state();
+		state_dumped = 1;
+	}
+}
 void drv_print_faults(DRVStruct drv){
+	state_dumped = 0;
     uint16_t val1 = drv_read_FSR1(drv);
     uint16_t val2 = drv_read_FSR2(drv);
 
-    if(val1 & (1<<10)){printf("\n\rFAULT\n\r");}
+    if(val1 & (1<<10)){printf("\n\rFAULT\n\r");handle_dump_state();}
 
-    if(val1 & (1<<9)){printf("VDS_OCP\n\r");}
-    if(val1 & (1<<8)){printf("GDF\n\r");}
-    if(val1 & (1<<7)){printf("UVLO\n\r");}
-    if(val1 & (1<<6)){printf("OTSD\n\r");}
-    if(val1 & (1<<5)){printf("VDS_HA\n\r");}
-    if(val1 & (1<<4)){printf("VDS_LA\n\r");}
-    if(val1 & (1<<3)){printf("VDS_HB\n\r");}
-    if(val1 & (1<<2)){printf("VDS_LB\n\r");}
-    if(val1 & (1<<1)){printf("VDS_HC\n\r");}
-    if(val1 & (1)){printf("VDS_LC\n\r");}
+    if(val1 & (1<<9)){printf("VDS_OCP\n\r");handle_dump_state();}
+    if(val1 & (1<<8)){printf("GDF\n\r");handle_dump_state();}
+    if(val1 & (1<<7)){printf("UVLO\n\r");handle_dump_state();}
+    if(val1 & (1<<6)){printf("OTSD\n\r");handle_dump_state();}
+    if(val1 & (1<<5)){printf("VDS_HA\n\r");handle_dump_state();}
+    if(val1 & (1<<4)){printf("VDS_LA\n\r");handle_dump_state();}
+    if(val1 & (1<<3)){printf("VDS_HB\n\r");handle_dump_state();}
+    if(val1 & (1<<2)){printf("VDS_LB\n\r");handle_dump_state();}
+    if(val1 & (1<<1)){printf("VDS_HC\n\r");handle_dump_state();}
+    if(val1 & (1)){printf("VDS_LC\n\r");handle_dump_state();}
 
-    if(val2 & (1<<10)){printf("SA_OC\n\r");}
-    if(val2 & (1<<9)){printf("SB_OC\n\r");}
-    if(val2 & (1<<8)){printf("SC_OC\n\r");}
-    if(val2 & (1<<7)){printf("OTW\n\r");}
-    if(val2 & (1<<6)){printf("CPUV\n\r");}
-    if(val2 & (1<<5)){printf("VGS_HA\n\r");}
-    if(val2 & (1<<4)){printf("VGS_LA\n\r");}
-    if(val2 & (1<<3)){printf("VGS_HB\n\r");}
-    if(val2 & (1<<2)){printf("VGS_LB\n\r");}
-    if(val2 & (1<<1)){printf("VGS_HC\n\r");}
-    if(val2 & (1)){printf("VGS_LC\n\r");}
+    if(val2 & (1<<10)){printf("SA_OC\n\r");handle_dump_state();}
+    if(val2 & (1<<9)){printf("SB_OC\n\r");handle_dump_state();}
+    if(val2 & (1<<8)){printf("SC_OC\n\r");handle_dump_state();}
+    if(val2 & (1<<7)){printf("OTW\n\r");handle_dump_state();}
+    if(val2 & (1<<6)){printf("CPUV\n\r");handle_dump_state();}
+    if(val2 & (1<<5)){printf("VGS_HA\n\r");handle_dump_state();}
+    if(val2 & (1<<4)){printf("VGS_LA\n\r");handle_dump_state();}
+    if(val2 & (1<<3)){printf("VGS_HB\n\r");handle_dump_state();}
+    if(val2 & (1<<2)){printf("VGS_LB\n\r");handle_dump_state();}
+    if(val2 & (1<<1)){printf("VGS_HC\n\r");handle_dump_state();}
+    if(val2 & (1)){printf("VGS_LC\n\r");handle_dump_state();}
 
 }
