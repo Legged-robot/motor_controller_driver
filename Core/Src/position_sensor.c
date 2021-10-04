@@ -34,10 +34,13 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	/* SPI read/write */
 	encoder->spi_tx_word = ENC_READ_WORD;
 	HAL_GPIO_WritePin(ENC_CS, GPIO_PIN_RESET ); 	// CS low
-	HAL_SPI_TransmitReceive(&ENC_SPI, (uint8_t*)encoder->spi_tx_buff, (uint8_t *)encoder->spi_rx_buff, 1, 100);
-	while( ENC_SPI.State == HAL_SPI_STATE_BUSY );  					// wait for transmission complete
+	HAL_StatusTypeDef errorcode = HAL_OK;
+	errorcode = HAL_SPI_TransmitReceive(&ENC_SPI, (uint8_t*)encoder->spi_tx_buff, (uint8_t *)encoder->spi_rx_buff, 1, 100);
+//	printf("err_code %d\r\n",errorcode);
+	// errorcode = HAL_SPI_Receive(&ENC_SPI, (uint8_t *)encoder->spi_rx_buff, 1, 100);
+	// while( ENC_SPI.State == HAL_SPI_STATE_BUSY );  					// wait for transmission complete
 	HAL_GPIO_WritePin(ENC_CS, GPIO_PIN_SET ); 	// CS high
-	encoder->raw = encoder ->spi_rx_word;
+	encoder->raw = encoder->spi_rx_word;
 
 	/* Linearization */
 	int off_1 = encoder->offset_lut[(encoder->raw)>>9];				// lookup table lower entry
@@ -53,9 +56,9 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	//encoder->angle_singleturn = TWO_PI_F*fmodf(((float)(encoder->count-M_ZERO))/((float)ENC_CPR), 1.0f);
 	encoder->angle_singleturn = encoder->angle_singleturn<0 ? encoder->angle_singleturn + TWO_PI_F : encoder->angle_singleturn;
 
-	encoder->elec_angle = (encoder->ppairs*(float)(encoder->count-E_ZERO))/((float)ENC_CPR);
-	int_angle = (int)encoder->elec_angle;
-	encoder->elec_angle = TWO_PI_F*(encoder->elec_angle - (float)int_angle);
+	float eoffset_in_ppairs = (encoder->ppairs*(float)(encoder->count-E_ZERO))/((float)ENC_CPR);
+	int ppairs_num = (int)eoffset_in_ppairs;
+	encoder->elec_angle = TWO_PI_F*(eoffset_in_ppairs - (float)ppairs_num);
 	//encoder->elec_angle = TWO_PI_F*fmodf((encoder->ppairs*(float)(encoder->count-E_ZERO))/((float)ENC_CPR), 1.0f);
 	encoder->elec_angle = encoder->elec_angle<0 ? encoder->elec_angle + TWO_PI_F : encoder->elec_angle;	// Add 2*pi to negative numbers
 	/* Rollover */
@@ -86,7 +89,8 @@ void ps_sample(EncoderStruct * encoder, float dt){
 		encoder->vel2 = -c1/dt;
 */
 	//encoder->velocity = vel2
-	encoder->velocity = (encoder->angle_multiturn[0] - encoder->angle_multiturn[N_POS_SAMPLES-1])/(dt*(float)(N_POS_SAMPLES-1));
+	float vel_angle_diff = encoder->angle_multiturn[0] - encoder->angle_multiturn[N_POS_SAMPLES-1];
+	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/(dt*(float)(N_POS_SAMPLES-1));
 	encoder->elec_velocity = encoder->ppairs*encoder->velocity;
 
 }

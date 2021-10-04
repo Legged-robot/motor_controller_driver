@@ -139,17 +139,19 @@ void init_controller_params(ControllerStruct *controller){
 
 	controller->ki_d = KI_D;
     controller->ki_q = KI_Q;
-    controller->k_d = K_SCALE*I_BW;
-    controller->k_q = K_SCALE*I_BW;
-    controller->alpha = 1.0f - 1.0f/(1.0f - DT*I_BW*TWO_PI_F);
-    controller->ki_fw = .1f*controller->ki_d;
+    controller->kp_d = K_SCALE*I_BW;
+    controller->kp_q = K_SCALE*I_BW;
+    controller->kd_d = KD_D;
+    controller->kd_q = KD_Q;
+    // controller->alpha = 1.0f - 1.0f/(1.0f - DT*I_BW*TWO_PI_F);
+    // controller->ki_fw = .1f*controller->ki_d;
     controller->phase_order = PHASE_ORDER;
     for(int i = 0; i<128; i++)	// Approximate duty cycle linearization
     {
         controller->inverter_tab[i] = 1.0f + 1.2f*exp(-0.0078125f*i/.032f);
     }
-
-    }
+    zero_commands(controller);
+}
 
 void reset_foc(ControllerStruct *controller){
 
@@ -228,9 +230,9 @@ void field_weaken(ControllerStruct *controller)
        controller->fw_int += .005f*(controller->v_max - controller->v_ref);
        controller->fw_int = fast_fmaxf(fast_fminf(controller->fw_int, 0.0f), -I_FW_MAX);
        controller->i_d_des = controller->fw_int;
+       controller->i_max = I_MAX;
        float q_max = sqrtf(controller->i_max*controller->i_max - controller->i_d_des*controller->i_d_des);
        controller->i_q_des = fast_fmaxf(fast_fminf(controller->i_q_des, q_max), -q_max);
-
 
 }
 void commutate(ControllerStruct *controller, EncoderStruct *encoder)
@@ -249,13 +251,18 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        /// Commutation  ///
        dq0(controller->theta_elec, controller->foc_i_a, controller->foc_i_b, controller->foc_i_c, &controller->i_d, &controller->i_q);    //dq0 transform on currents - 3.8 us
 
-       controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
-       controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
+//       float i_dq = sqrtf(controller->i_d*controller->i_d + controller->i_q*controller->i_q);	// Total current present in the system
+//
+//       controller->i_d = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_d;	//Introduce current threshold
+//       controller->i_q = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_q;
+//
+//       controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
+//       controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
        
        /* Saturate voltage at the beggining of the callibration loops*/
        controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
 
-       controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //sqrt(1/3)
+       controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //TODO: remove sqrt(1/3)
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
 
        limit_norm(&controller->i_d_des, &controller->i_q_des, controller->i_max);	// 2.3 us
@@ -264,24 +271,25 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        float i_d_error = controller->i_d_des - controller->i_d;
        float i_q_error = controller->i_q_des - controller->i_q;
 
-
        // Calculate decoupling feed-forward voltages //
        float v_d_ff = 0.0f;//-controller->dtheta_elec*L_Q*controller->i_q;
        float v_q_ff = 0.0f;//controller->dtheta_elec*L_D*controller->i_d;
 
-       controller->v_d = controller->k_d*i_d_error + controller->d_int + v_d_ff;
-
+//         float di_d_error = (i_d_error - controller->prev_i_d_error)/(controller->loop_count*DT);
+//         float di_q_error = (i_q_error - controller->prev_i_q_error)/(controller->loop_count*DT);
+        float di_d_error = 0;
+        float di_q_error = 0;
+       controller->v_d = controller->kp_d*i_d_error + controller->d_int + controller->kd_d*di_d_error + v_d_ff;
        controller->v_d = fast_fmaxf(fast_fminf(controller->v_d, controller->v_max), -controller->v_max);
-
-       controller->d_int += controller->k_d*controller->ki_d*i_d_error;
+       controller->d_int += controller->kp_d*controller->ki_d*i_d_error;	//TODO: zero out integral values for small errors
        controller->d_int = fast_fmaxf(fast_fminf(controller->d_int, controller->v_max), -controller->v_max); // | d_int |<= v_max  
-       float vq_max = sqrtf(controller->v_max*controller->v_max - controller->v_d*controller->v_d); //prioritaze v_d (based on the vector summation :v_max -hypotenuse)
 
-       controller->v_q = controller->k_q*i_q_error + controller->q_int + v_q_ff;
-       controller->q_int += controller->k_q*controller->ki_q*i_q_error;
+       controller->v_q = controller->kp_q*i_q_error + controller->q_int + controller->kd_q*di_q_error + v_q_ff;
+       controller->v_q = fast_fmaxf(fast_fminf(controller->v_q, controller->v_max), -controller->v_max);
+       controller->q_int += controller->kp_q*controller->ki_q*i_q_error;
        controller->q_int = fast_fmaxf(fast_fminf(controller->q_int, controller->v_max), -controller->v_max);
+
        controller->v_ref = sqrtf(controller->v_d*controller->v_d + controller->v_q*controller->v_q); // used for field weakening
-       controller->v_q = fast_fmaxf(fast_fminf(controller->v_q, vq_max), -vq_max);
 
        limit_norm(&controller->v_d, &controller->v_q, controller->v_max);
 
@@ -289,14 +297,26 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        svm(controller->v_bus, controller->v_u, controller->v_v, controller->v_w, &controller->dtc_u, &controller->dtc_v, &controller->dtc_w); //space vector modulation
 
        set_dtc(controller);
+//       controller->loop_count = 0; //reset loop counter
+//       controller->prev_i_d_error = i_d_error;
+//       controller->prev_i_q_error = i_q_error;
 
     }
 
 
 void torque_control(ControllerStruct *controller){
 
-    float torque_des = controller->kp*(controller->p_des - controller->theta_mech) + controller->t_ff + controller->kd*(controller->v_des - controller->dtheta_mech);
-    controller->i_q_des = torque_des/(KT*GR);
+    float ee_torque_des = controller->kp*(controller->p_des - controller->theta_mech) + controller->t_ff + controller->kd*(controller->v_des - controller->dtheta_mech);
+    float motor_torque_des = ee_torque_des/(KT*GR);
+    if(fabsf(motor_torque_des) < TORQUE_THRESHOLD){
+    	controller->i_q_des = 0;
+        controller->d_int = controller->d_int/1.9;	// Strategy to reduce integral accumulation
+        controller->q_int = controller->q_int/1.9;
+    }
+    else {
+    	controller->i_q_des = motor_torque_des;
+    }
+    controller->i_q_des = motor_torque_des;
     controller->i_d_des = 0.0f;
 
     }

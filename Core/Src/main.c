@@ -183,7 +183,7 @@ int main(void)
  	  init_controller_params(&controller);
 
  	  /* calibration "encoder" zeroing */
- 	  memset(&comm_encoder_cal.cal_position, 0, sizeof(EncoderStruct));
+ 	  memset(&comm_encoder_cal.encoder_p, 0, sizeof(EncoderStruct));
 
  	  /* commutation encoder setup */
  	  comm_encoder.m_zero = M_ZERO;
@@ -199,7 +199,6 @@ int main(void)
  	  HAL_ADC_Start(&hadc1);
  	  HAL_ADC_Start(&hadc2);
  	  HAL_ADC_Start(&hadc3);
-
  	  /* DRV8323 setup */
  	  HAL_GPIO_WritePin(DRV_CS, GPIO_PIN_SET ); 	// CS high
  	  HAL_GPIO_WritePin(ENABLE_PIN, GPIO_PIN_SET );
@@ -227,10 +226,8 @@ int main(void)
  	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
 
  	  /* CAN setup */
- 	  can_rx_init(&can_rx);
- 	  can_tx_init(&can_tx);
- 	  HAL_CAN_Start(&CAN_H); //start CAN
- 	  __HAL_CAN_ENABLE_IT(&CAN_H, CAN_IT_RX_FIFO0_MSG_PENDING); // Start can interrupt
+ 	  CAN_User_Config(&CAN_H, &can_rx, &can_tx);
+ 	//   __HAL_CAN_ENABLE_IT(&CAN_H, CAN_IT_RX_FIFO0_MSG_PENDING); // Start can interrupt TODO:handled inside CAN_User_Config
 
  	  /* Set Interrupt Priorities */
  	  NVIC_SetPriority(PWM_ISR, 1); // commutation > communication
@@ -255,6 +252,7 @@ int main(void)
 
 	  HAL_Delay(100);
 	  drv_print_faults(drv);
+//	  printf("Can received p_des: %.3f\t  v_des: %.3f\t  kp: %.3f\t  kd: %.3f\t  t_ff: %.3f\t  i_q_ref: %.3f \n\r", controller.p_des, controller.v_des, controller.kp, controller.kd, controller.t_ff, controller.i_q_des);
 	  if(state.state==MOTOR_MODE){
 	  //	  printf("%.2f %.2f %.2f %.2f %.2f\r\n", controller.i_a, controller.i_b, controller.i_d, controller.i_q, controller.dtheta_elec);
 	  }
@@ -318,6 +316,41 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+	/* Get RX message */
+	if (hcan != &CAN_H){
+		printf("Check can receiver!");
+	}
+	if (HAL_CAN_GetRxMessage(&CAN_H, CAN_RX_FIFO0, &can_rx.rx_header, can_rx.data) != HAL_OK)
+	{
+		/* Reception Error */
+		Error_Handler();
+	}
+	// Read CAN
+	uint32_t TxMailbox;
+	pack_reply(&can_tx, CAN_ID,  comm_encoder.angle_multiturn[0]/GR, comm_encoder.velocity/GR, controller.i_q_filt*KT*GR);	// Pack response
+	HAL_CAN_AddTxMessage(&CAN_H, &can_tx.tx_header, can_tx.data, &TxMailbox);	// Send response
+
+	/* Check for special Commands */
+	if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) & (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFC))){
+		update_fsm(&state, MOTOR_CMD);
+		}
+	else if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) * (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFD))){
+		update_fsm(&state, MENU_CMD);
+		}
+	else if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) * (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFE))){
+		update_fsm(&state, ZERO_CMD);
+		}
+	else{
+		unpack_cmd(can_rx, &controller);	// Unpack commands
+		controller.timeout = 0;					// Reset timeout counter
+	}
+
+}
+void bla(){
+
+}
 /* USER CODE END 4 */
 
 /**

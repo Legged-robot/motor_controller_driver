@@ -28,7 +28,7 @@ extern "C" {
 #include "main.h"
 
 /* USER CODE BEGIN Includes */
-
+#include "foc.h"
 /* USER CODE END Includes */
 
 extern CAN_HandleTypeDef hcan1;
@@ -62,10 +62,9 @@ void MX_CAN1_Init(void);
 		CAN_TxHeaderTypeDef tx_header;
 	}CANTxMessage ;
 
-	void can_rx_init(CANRxMessage *msg);
-	void can_tx_init(CANTxMessage *msg);
+	void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMessage *tx_msg);
 	void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t);
-	void unpack_cmd(CANRxMessage msg, float *commands);
+	void unpack_cmd(CANRxMessage msg, ControllerStruct * controller);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

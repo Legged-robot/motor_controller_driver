@@ -35,25 +35,38 @@
 			 break;
 
 		 case CALIBRATION_MODE:
-			 if(!comm_encoder_cal.done_ordering){
+			 if(!(comm_encoder_cal.done_ordering && comm_encoder_cal.done_ppair_detect)){
 				 order_phases(&comm_encoder, &controller, &comm_encoder_cal, controller.loop_count);
 			 }
 			 else if(!comm_encoder_cal.done_cal){
 				 calibrate_encoder(&comm_encoder, &controller, &comm_encoder_cal, controller.loop_count);
 			 }
+			 else if(!comm_encoder_cal.ezero){
+				 set_ezero(&comm_encoder, &controller, &comm_encoder_cal, controller.loop_count);
+			 }
 			 else{
-				 /* Exit calibration mode when done */
-				 //for(int i = 0; i<128*PPAIRS; i++){printf("%d\r\n", error_array[i]);}
-				 E_ZERO = comm_encoder_cal.ezero;
-				 printf("E_ZERO: %d  %f\r\n", E_ZERO, TWO_PI_F*fmodf((comm_encoder.ppairs*(float)(-E_ZERO))/((float)ENC_CPR), 1.0f));
-				 memcpy(&comm_encoder.offset_lut, comm_encoder_cal.lut_arr, sizeof(comm_encoder.offset_lut));
-				 memcpy(&ENCODER_LUT, comm_encoder_cal.lut_arr, sizeof(comm_encoder_cal.lut_arr));
-				 //for(int i = 0; i<128; i++){printf("%d\r\n", ENCODER_LUT[i]);}
-				 if (!preference_writer_ready(prefs)){ preference_writer_open(&prefs);}
-				 preference_writer_flush(&prefs);
-				 preference_writer_close(&prefs);
-				 preference_writer_load(prefs);
-				 update_fsm(fsmstate, MENU_CMD);
+				/* Exit calibration mode when done */
+				//for(int i = 0; i<128*PPAIRS; i++){printf("%d\r\n", error_array[i]);}
+				E_ZERO = comm_encoder_cal.ezero;
+				printf("E_ZERO: %d  %f\r\n", E_ZERO, TWO_PI_F*fmodf((comm_encoder.ppairs*(float)(-E_ZERO))/((float)ENC_CPR), 1.0f));
+				memcpy(&comm_encoder.offset_lut, comm_encoder_cal.encoder_p.offset_lut, sizeof(comm_encoder_cal.encoder_p.offset_lut));
+				memcpy(&ENCODER_LUT, comm_encoder_cal.encoder_p.offset_lut, sizeof(comm_encoder_cal.encoder_p.offset_lut));
+
+				ps_sample(&comm_encoder, DT);
+				M_ZERO = comm_encoder.count - ZERO_ERROR_OFFSET_COUNTS;
+				comm_encoder.m_zero = M_ZERO;
+				comm_encoder.first_sample =0;
+
+				printf("\n\r  M_ZERO:  %d \n\r\n\r", M_ZERO);
+
+				if (!preference_writer_ready(prefs)){	//write new zeros to flash
+					preference_writer_open(&prefs);
+				}
+				preference_writer_flush(&prefs);
+				preference_writer_close(&prefs);
+				preference_writer_load(prefs);
+
+				update_fsm(fsmstate, MENU_CMD);
 			 }
 
 			 break;
@@ -62,14 +75,15 @@
 			 /* If CAN has timed out, reset all commands */
 			 if((CAN_TIMEOUT > 0 ) && (controller.timeout > CAN_TIMEOUT)){
 				 zero_commands(&controller);
+				 reset_foc(&controller);
 			 }
 			 /* Otherwise, commutate */
 			 else{
 				 torque_control(&controller);
 				 field_weaken(&controller);
 				 commutate(&controller, &comm_encoder);
+				 controller.timeout ++;
 			 }
-			 controller.timeout ++;
 			 break;
 
 		 case SETUP_MODE:
@@ -114,6 +128,7 @@
 				controller.loop_count = 0; // TODO: supsicion on loop_counter overflow, might be overprotecting
 				comm_encoder_cal.done_cal = 0;
 				comm_encoder_cal.done_ordering = 0;
+				comm_encoder_cal.done_ppair_detect = 0;
 				comm_encoder_cal.started = 0;
 				comm_encoder.e_zero = 0;
 				memset(&comm_encoder.offset_lut, 0, sizeof(comm_encoder.offset_lut));
@@ -145,11 +160,11 @@
 				if( (fabs(controller.i_q_filt)<1.0f) && (fabs(controller.i_d_filt)<1.0f) ){
 					fsmstate->ready = 1;
 					drv_disable_gd(drv);
-					reset_foc(&controller);
 					//printf("Leaving Motor Mode\r\n");
 					HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
 				}
 				zero_commands(&controller);		// Set commands to zero
+				reset_foc(&controller);
 				break;
 			case CALIBRATION_MODE:
 				//printf("Exiting Calibration Mode\r\n");
@@ -195,11 +210,16 @@
 					comm_encoder.m_zero = 0;
 					ps_sample(&comm_encoder, DT);
 //					HAL_Delay(29); //stuck in here since this is executed inside TIM1 interrupt routine
-					M_ZERO = comm_encoder.count;
-					//if (!prefs.ready()) prefs.open();
-					//    prefs.flush();                                                  // Write new prefs to flash
-					//    prefs.close();
-					//    prefs.load();
+					M_ZERO = comm_encoder.count - ZERO_ERROR_OFFSET_COUNTS;
+					comm_encoder.first_sample =0;
+
+					if (!preference_writer_ready(prefs)){ 
+						preference_writer_open(&prefs);
+					}	//write new zero to flash
+					preference_writer_flush(&prefs);
+					preference_writer_close(&prefs);
+					preference_writer_load(prefs);
+
 					//spi.SetMechOffset(M_OFFSET);
 					printf("\n\r  Saved new zero position:  %d \n\r\n\r", M_ZERO);
 					enter_menu_state(); // go back to menu state
@@ -240,7 +260,7 @@
 	    printf(" c - Calibrate Encoder\n\r");
 	    printf(" s - Setup\n\r");
 	    printf(" e - Display Encoder\n\r");
-	    printf(" z - Set Zero Position and zero out the stored values(reset MCU afterwards)\n\r");
+	    printf(" z - Set Zero Position\n\r");
 	    printf(" esc - Exit to Menu\n\r");
 
 	    //gpio.led->write(0);

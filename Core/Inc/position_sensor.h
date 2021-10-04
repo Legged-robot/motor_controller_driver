@@ -13,9 +13,10 @@
 #include "spi.h"
 #include <stdint.h>
 
-#define N_POS_SAMPLES 20		// Number of position samples to store.  should put this somewhere else...
+#define N_POS_SAMPLES 20						// Number of position samples to store.  should put this somewhere else...
 #define N_LUT 128
-
+#define ZERO_ERROR_OFFSET_COUNTS 5				// Compensate error when setting the new zero position
+#define VELOCITY_DETECTION_THRESHOLD 0.0009f	// Dont calculate velocity for angle diff smaller than threshold
 typedef struct{
 	union{
 		uint8_t spi_tx_buff[2];

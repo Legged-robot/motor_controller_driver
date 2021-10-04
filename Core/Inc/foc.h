@@ -11,7 +11,8 @@
 #include <stdint.h>
 #include "position_sensor.h"
 
-
+#define CURRENT_THRESHOLD 	0.7f					//Current threshold in Amps
+#define TORQUE_THRESHOLD 	0.2f					//Torque threshold
 typedef struct{
 	uint32_t tim_ch_w;								// Terminal W timer channel
     int adc_a_raw, adc_b_raw, adc_c_raw, adc_vbus_raw;      // Raw ADC Values
@@ -19,13 +20,14 @@ typedef struct{
     float foc_i_a, foc_i_b, foc_i_c;                                    // Phase currents saved for current foc itterations
     float v_bus, v_bus_filt;                                // DC link voltage
     float theta_mech, theta_elec;                           // Rotor mechanical and electrical angle
+    float prev_i_d_error, prev_i_q_error;                   // Previous error values for foc control
     float dtheta_mech, dtheta_elec, dtheta_elec_filt;       // Rotor mechanical and electrical angular velocit
     float i_d, i_q, i_q_filt, i_d_filt;                     // D/Q currents
     float i_mag;											// Current magnitude
     float v_d, v_q;                                         // D/Q voltages
     float dtc_u, dtc_v, dtc_w;                              // Terminal duty cycles
     float v_u, v_v, v_w;                                    // Terminal voltages
-    float k_d, k_q, ki_d, ki_q, ki_fw, alpha;               // Current loop gains, current reference filter coefficient
+    float kp_d, kp_q, ki_d, ki_q, kd_d, kd_q, ki_fw, alpha;               // Current loop gains, current reference filter coefficient
     float d_int, q_int;                                     // Current error integrals
     int adc_CH_IA_offset, adc_CH_IB_offset, adc_c_offset, adc_vbus_offset; 		// ADC offsets
     float i_d_des, i_q_des, i_d_des_filt, i_q_des_filt;     // Current references

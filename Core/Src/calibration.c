@@ -18,11 +18,13 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 	/* Checks phase order, to ensure that positive Q current produces
 	   torque in the positive direction wrt the position sensor */
 	PHASE_ORDER = 0;
-
+	
 	if(!cal->started){
 		printf("Checking phase sign, pole pairs\r\n");
 		cal->started = 1;
 		cal->start_count = loop_count;
+		cal->next_time_ref = T1+2.0f*PI_F/W_CAL;
+		cal->ppairs = 1; //at least one electrical revolution will be performed (at least one ppair is surely available)
 	}
 	cal->time = (float)(loop_count - cal->start_count)*DT;
 	if (cal->time<0){
@@ -32,42 +34,70 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
     if(cal->time < T1){
         // Set voltage angle to zero, wait for rotor position to settle
         cal->theta_ref = 0;//W_CAL*cal->time;
-        cal->cal_position.elec_angle = cal->theta_ref;
-        cal->cal_position.elec_velocity = 0;
+        cal->encoder_p.elec_angle = cal->theta_ref;
+        cal->encoder_p.elec_velocity = 0;
         controller->i_d_des = I_CAL;
         controller->i_q_des = 0.0f;
-        commutate(controller, &cal->cal_position);
-    	cal->theta_start = encoder->angle_multiturn[0];
+        commutate(controller, &cal->encoder_p);
+    	cal->enc_start_count = encoder->raw;
     	return;
     }
-
-    else if(cal->time < T1+2.0f*PI_F/W_CAL){
-    	// rotate voltage vector through one electrical cycle
+    else if(cal->time < cal->next_time_ref){
+    	// Rotate voltage vector through one electrical cycle
     	cal->theta_ref = W_CAL*(cal->time-T1);
-    	cal->cal_position.elec_angle = cal->theta_ref;
-		commutate(controller, &cal->cal_position);
+    	cal->encoder_p.elec_angle = cal->theta_ref;
+		commutate(controller, &cal->encoder_p);
     	return;
     }
+	else if (fabsf(encoder->raw-cal->enc_start_count)>ENC_FULL_MECH_ROTATION_TH){
+		// Motor still didnt complete one mechanical revolution
+		cal->next_time_ref += 2.0f*PI_F/W_CAL;			// Request one more electrical cycle
+		cal->ppairs++;									// One more ppair is present
+		if (!cal->done_ordering){
+			// Finished first elecrical cycle, perform phase order check						
+			int enc_end_count = encoder->raw;
+			if(fabs(cal->enc_start_count - enc_end_count) > ENC_CPR/4){	// Assumption: motor has more than 4 ppairs
+				// overflow of the counter
+				float correction = cal->enc_start_count > enc_end_count ? ENC_CPR : -ENC_CPR;
+				enc_end_count += correction;
+			}
+
+			if(cal->enc_start_count < enc_end_count){
+				cal->phase_order = 0;
+			}
+			else{
+				cal->phase_order = 1;
+			}
+			cal->done_ordering = 1;
+		}
+
+		//continue with commutation
+		cal->theta_ref = W_CAL*(cal->time-T1);
+		cal->encoder_p.elec_angle = cal->theta_ref;
+		commutate(controller, &cal->encoder_p);
+		return;
+	}
+	//motor completed one mechanical revolution
 
 	reset_foc(controller);
 
-	float theta_end = encoder->angle_multiturn[0];
-	cal->ppairs = round(2.0f*PI_F/fabsf(theta_end-cal->theta_start));
+	
+	// cal->ppairs = round(2.0f*PI_F/fabsf(enc_end_count-cal->enc_start_count)); //TODO: if sensor is not calibrated, not a valid reference to calculate pparis!
+	//	cal->ppairs = 14;	//TODO: change to right value
 
-	if(cal->theta_start < theta_end){
-		cal->phase_order = 0;
+	if(cal->phase_order == 0){
 		printf("Phase order correct\r\n");
 	}
 	else{
-		cal->phase_order = 1;
 		printf("Swapping phase sign\r\n");
 	}
     printf("Pole Pairs: %d\r\n", cal->ppairs);
-    printf("Start: %.3f   End: %.3f\r\n", cal->theta_start, theta_end);
+    // printf("Start: %.3f   End: %.3f\r\n", cal->enc_start_count, enc_end_count);
     PHASE_ORDER = cal->phase_order;
     PPAIRS = (float)cal->ppairs;
+	cal->done_ppair_detect = 1;
     cal->started = 0;
-    cal->done_ordering = 1;	// Finished checking phase order
+    
 }
 
 void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, CalStruct * cal, int loop_count){
@@ -88,21 +118,20 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
     if(cal->time < T1){
         // Set voltage angle to zero, wait for rotor position to settle
         cal->theta_ref = 0;//W_CAL*cal->time;
-        cal->cal_position.elec_angle = cal->theta_ref;
-        cal->cal_position.elec_velocity = 0;
+        cal->encoder_p.elec_angle = cal->theta_ref;
+        cal->encoder_p.elec_velocity = 0;
         controller->i_d_des = I_CAL;
         controller->i_q_des = 0.0f;
-        commutate(controller, &cal->cal_position);
+        commutate(controller, &cal->encoder_p);
 
-    	cal->theta_start = encoder->angle_multiturn[0];
     	cal->next_sample_time = cal->time;
     	return;
     }
     else if (cal->time < T1+2.0f*PI_F*PPAIRS/W_CAL){
     	// rotate voltage vector through one mechanical rotation in the positive direction
-		cal->theta_ref += W_CAL*DT;//(cal->time-T1);
-		cal->cal_position.elec_angle = cal->theta_ref;
-		commutate(controller, &cal->cal_position);
+		cal->theta_ref = W_CAL*(cal->time-T1);
+		cal->encoder_p.elec_angle = cal->theta_ref;
+		commutate(controller, &cal->encoder_p);
 
 		// sample SAMPLES_PER_PPAIR times per pole-pair
 		if(cal->time > cal->next_sample_time){
@@ -121,11 +150,11 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
     }
 	else if (cal->time < T1+4.0f*PI_F*PPAIRS/W_CAL){
 		// rotate voltage vector through one mechanical rotation in the negative direction
-		cal->theta_ref -= W_CAL*DT;//(cal->time-T1);
+		cal->theta_ref = W_CAL*(4.0f*PI_F*PPAIRS/W_CAL + T1 - cal->time);
 		controller->i_d_des = I_CAL;
 		controller->i_q_des = 0.0f;
-		cal->cal_position.elec_angle = cal->theta_ref;
-		commutate(controller, &cal->cal_position);
+		cal->encoder_p.elec_angle = cal->theta_ref;
+		commutate(controller, &cal->encoder_p);
 
 		// sample SAMPLES_PER_PPAIR times per pole-pair
 		if((cal->time > cal->next_sample_time)&&(cal->sample_count>0)){
@@ -141,14 +170,14 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 		return;
     }
 
-    reset_foc(controller);
+	reset_foc(controller);
 
     // Calculate average offset
-    int ezero_mean = 0;
+    int zero_mean = 0;
 	for(int i = 0; i<((int)PPAIRS*SAMPLES_PER_PPAIR); i++){
-		ezero_mean += cal->error_arr[i];
+		zero_mean += cal->error_arr[i];
 	}
-	cal->ezero = ezero_mean/(SAMPLES_PER_PPAIR*PPAIRS);
+	zero_mean = zero_mean/(SAMPLES_PER_PPAIR*PPAIRS);
 
 	// Moving average to filter out cogging ripple
 
@@ -165,13 +194,47 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 			moving_avg = moving_avg/window;
 			int lut_index = lut_offset + i;
 			if(lut_index>(N_LUT-1)){lut_index -= N_LUT;}
-			cal->lut_arr[lut_index] = moving_avg - cal->ezero;
-			printf("%d  %d\r\n", lut_index, moving_avg - cal->ezero);
+			cal->encoder_p.offset_lut[lut_index] = moving_avg - zero_mean;
+			printf("%d  %d\r\n", lut_index, cal->encoder_p.offset_lut[lut_index]);
 
 		}
+		
 
 	cal->started = 0;
 	cal->done_cal = 1;
+}
+void set_ezero(EncoderStruct *encoder, ControllerStruct *controller, CalStruct * cal, int loop_count){
+	/* Calibrates e-zero and encoder nonliearity */
+
+	if(!cal->started){
+			printf("Starting ezero determination procedure\r\n");
+			cal->started = 1;
+			cal->start_count = loop_count;
+			cal->sample_count = 0;
+		}
+
+	cal->time = (float)(loop_count - cal->start_count)*DT;
+	if (cal->time<0){
+		printf("set_ezero: cal->time<0!!! WARNING!!! \r\n");
+	}
+    if(cal->time < T1){
+        // Set voltage angle to zero, wait for rotor position to settle
+        cal->theta_ref = 0;//W_CAL*cal->time;
+        cal->encoder_p.elec_angle = cal->theta_ref;
+        cal->encoder_p.elec_velocity = 0;
+        controller->i_d_des = I_CAL;
+        controller->i_q_des = 0.0f;
+        commutate(controller, &cal->encoder_p);
+		
+    	return;
+    }
+
+	ps_sample(&cal->encoder_p, DT); //sample while holding on the zero position
+
+	reset_foc(controller);
+
+	cal->ezero = cal->encoder_p.count;
+	cal->started = 0;
 }
 
 void measure_lr(EncoderStruct *encoder, ControllerStruct *controller, CalStruct * cal, int loop_count){
