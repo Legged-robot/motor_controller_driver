@@ -52,8 +52,7 @@
 				memcpy(&comm_encoder.offset_lut, comm_encoder_cal.encoder_p.offset_lut, sizeof(comm_encoder_cal.encoder_p.offset_lut));
 				memcpy(&ENCODER_LUT, comm_encoder_cal.encoder_p.offset_lut, sizeof(comm_encoder_cal.encoder_p.offset_lut));
 
-				ps_sample(&comm_encoder, DT);
-				M_ZERO = comm_encoder.count - ZERO_ERROR_OFFSET_COUNTS;
+				M_ZERO = comm_encoder_cal.ezero - ZERO_ERROR_OFFSET_COUNTS;
 				comm_encoder.m_zero = M_ZERO;
 				comm_encoder.first_sample =0;
 
@@ -79,10 +78,11 @@
 			 }
 			 /* Otherwise, commutate */
 			 else{
-				 torque_control(&controller);
-				 field_weaken(&controller);
-				 commutate(&controller, &comm_encoder);
-				 controller.timeout ++;
+//				 torque_control(&controller);
+//				 field_weaken(&controller);
+//				 commutate(&controller, &comm_encoder);
+//				 controller.timeout ++;	//TODO: uncomment
+				 commutate_d(&controller, &comm_encoder,1);
 			 }
 			 break;
 
@@ -129,6 +129,7 @@
 				comm_encoder_cal.done_cal = 0;
 				comm_encoder_cal.done_ordering = 0;
 				comm_encoder_cal.done_ppair_detect = 0;
+				comm_encoder_cal.done_ezero = 0;
 				comm_encoder_cal.started = 0;
 				comm_encoder.e_zero = 0;
 				memset(&comm_encoder.offset_lut, 0, sizeof(comm_encoder.offset_lut));
@@ -164,7 +165,7 @@
 					HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
 				}
 				zero_commands(&controller);		// Set commands to zero
-				reset_foc(&controller);
+//				reset_foc(&controller);
 				break;
 			case CALIBRATION_MODE:
 				//printf("Exiting Calibration Mode\r\n");
@@ -208,7 +209,7 @@
 					break;
 				case ZERO_CMD:
 					comm_encoder.m_zero = 0;
-					ps_sample(&comm_encoder, DT);
+					ps_sample(&comm_encoder, DT, PS_POLL_FOR_DATA);
 //					HAL_Delay(29); //stuck in here since this is executed inside TIM1 interrupt routine
 					M_ZERO = comm_encoder.count - ZERO_ERROR_OFFSET_COUNTS;
 					comm_encoder.first_sample =0;
@@ -332,7 +333,10 @@
 			 printf("I_CAL set to %f\r\n", I_CAL);
 			 break;
 		 case 'g':
-			 GR = fmaxf(atof(fsmstate->cmd_buff), .001f);	// Limit prevents divide by zero if user tries to enter zero
+			GR = atof(fsmstate->cmd_buff);
+			if (fabsf(GR) < .001f){ // Limit prevents divide by zero if user tries to enter zero
+				GR = .001f;
+			}
 			 printf("GR set to %f\r\n", GR);
 			 break;
 		 case 'k':

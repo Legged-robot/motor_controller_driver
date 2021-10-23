@@ -42,35 +42,34 @@ void set_dtc(ControllerStruct *controller){
 	// dump_state();
 }
 
-void analog_sample (ControllerStruct *controller){
+void calc_analog_data (ControllerStruct *controller){
 	/* Sampe ADCs */
 	/* Handle phase order swapping so that voltage/current/torque match encoder direction */
+    // HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_SET);
+
+    // By now, new ADC data should be available
+    if(!controller->adc_data_ready_flag)
+    {
+    	while(!controller->adc_data_ready_flag);
+    }
+    else
+    {
+    	controller->adc_data_ready_flag = 0; //Indicate that new data is required for next iteration
+    }
+
 	if(!PHASE_ORDER){
-		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IA);
-		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IB);
-        
-        controller->i_a = I_SCALE*(float)(controller->adc_a_raw - controller->adc_CH_IA_offset);    // Calculate phase currents from ADC readings
-        controller->i_b = I_SCALE*(float)(controller->adc_b_raw - controller->adc_CH_IB_offset);
-		//adc_ch_ic = ADC_CH_IC;
+        controller->i_a = I_SCALE*(float)(controller->adc_ch_i_offset[0] - controller->adc_data[0]);    // Calculate phase currents from ADC readings
+        controller->i_b = I_SCALE*(float)(controller->adc_ch_i_offset[1] - controller->adc_data[1]);
 	}
 	else{
-		controller->adc_a_raw = HAL_ADC_GetValue(&ADC_CH_IB);
-		controller->adc_b_raw = HAL_ADC_GetValue(&ADC_CH_IA);
-
-        controller->i_a = I_SCALE*(float)(controller->adc_a_raw - controller->adc_CH_IB_offset);    // Calculate phase currents from ADC readings
-        controller->i_b = I_SCALE*(float)(controller->adc_b_raw - controller->adc_CH_IA_offset);
-
-		//adc_ch_ic = ADC_CH_IB;
+        controller->i_a = I_SCALE*(float)(controller->adc_ch_i_offset[1] - controller->adc_data[1]);    // Calculate phase currents from ADC readings
+        controller->i_b = I_SCALE*(float)(controller->adc_ch_i_offset[0] - controller->adc_data[0]);
 	}
 
     controller->i_c = -controller->i_a - controller->i_b;
 
-	HAL_ADC_Start(&ADC_CH_MAIN);
-	HAL_ADC_PollForConversion(&ADC_CH_MAIN, HAL_MAX_DELAY);
-
-	controller->adc_vbus_raw = HAL_ADC_GetValue(&ADC_CH_VBUS);
-	controller->v_bus = (float)controller->adc_vbus_raw*V_SCALE;
-
+	controller->v_bus = (float)controller->adc_data[2]*V_SCALE;
+	// HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_RESET);
 }
 
 void abc( float theta, float d, float q, float *a, float *b, float *c){
@@ -117,21 +116,33 @@ void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, flo
 void zero_current(ControllerStruct *controller){
 	/* Measure zero-current ADC offset */
 
-    int adc_CH_IA_offset = 0;
-    int adc_CH_IB_offset = 0;
-    int n = 1000;
+    uint32_t adc_ch_ia_offset = 0;
+    uint32_t adc_ch_ib_offset = 0;
+    uint32_t n = 1000;
     controller->dtc_u = 0.f;
     controller->dtc_v = 0.f;
     controller->dtc_w = 0.f;
     set_dtc(controller);
 
     for (int i = 0; i<n; i++){               // Average n samples
-    	analog_sample(controller);
-    	adc_CH_IA_offset +=  controller->adc_a_raw;
-    	adc_CH_IB_offset += controller->adc_b_raw;
+        controller->adc_data_ready_flag = 0;        // clear flag
+		/* Manually start ADC - Possible based on Reference Manual: 13.6
+		 * Software source trigger events can be generated ...
+		*/
+        SET_BIT(ADC_CH_MAIN.Instance->CR2, ADC_CR2_SWSTART);
+        /* EOC should be set once conversion from all 3 ADCs is completed.
+         * Ref: 13.9.2 Regular simultaneous mode
+         * Valid way to check for finish is to monitor flag set by DMA
+         * 	*/
+        /* HAL can be used but will be slower */
+//  	HAL_ADC_Start(&hadc1);
+//    	HAL_ADC_PollForConversion(&ADC_CH_MAIN, HAL_MAX_DELAY);
+    	calc_analog_data(controller); //waiting for new data flag implemented in the function
+    	adc_ch_ia_offset +=  controller->adc_data[0];
+    	adc_ch_ib_offset += controller->adc_data[1];
      }
-    controller->adc_CH_IA_offset = adc_CH_IA_offset/n;
-    controller->adc_CH_IB_offset = adc_CH_IB_offset/n;
+    controller->adc_ch_i_offset[0] = adc_ch_ia_offset/n;
+    controller->adc_ch_i_offset[1] = adc_ch_ib_offset/n;
 
     }
 
@@ -244,7 +255,7 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 		controller->theta_elec = encoder->elec_angle;
 		controller->dtheta_elec = encoder->elec_velocity;
 		controller->dtheta_mech = encoder->velocity/GR;
-		controller->theta_mech = encoder->angle_multiturn[0]/GR;
+		controller->theta_mech = encoder->angle_multiturn[N_POS_SAMPLES-1]/GR;
         controller->foc_i_a = controller->i_a;
         controller->foc_i_b = controller->i_b;
         controller->foc_i_c = controller->i_c;
@@ -256,14 +267,15 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 //       controller->i_d = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_d;	//Introduce current threshold
 //       controller->i_q = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_q;
 //
-//       controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
-//       controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
+       controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
+       controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
        
        /* Saturate voltage at the beggining of the callibration loops*/
        controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
 
        controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //TODO: remove sqrt(1/3)
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
+       controller->int_max = INTEGRAL_MAX_TO_VMAX_RATIO*controller->v_max;
 
        limit_norm(&controller->i_d_des, &controller->i_q_des, controller->i_max);	// 2.3 us
 
@@ -282,12 +294,14 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        controller->v_d = controller->kp_d*i_d_error + controller->d_int + controller->kd_d*di_d_error + v_d_ff;
        controller->v_d = fast_fmaxf(fast_fminf(controller->v_d, controller->v_max), -controller->v_max);
        controller->d_int += controller->kp_d*controller->ki_d*i_d_error;	//TODO: zero out integral values for small errors
-       controller->d_int = fast_fmaxf(fast_fminf(controller->d_int, controller->v_max), -controller->v_max); // | d_int |<= v_max  
+       controller->d_int = fast_fmaxf(fast_fminf(controller->d_int, controller->int_max), -controller->int_max); // | d_int |<= v_max
+//       controller->d_int = 0;
 
        controller->v_q = controller->kp_q*i_q_error + controller->q_int + controller->kd_q*di_q_error + v_q_ff;
        controller->v_q = fast_fmaxf(fast_fminf(controller->v_q, controller->v_max), -controller->v_max);
        controller->q_int += controller->kp_q*controller->ki_q*i_q_error;
-       controller->q_int = fast_fmaxf(fast_fminf(controller->q_int, controller->v_max), -controller->v_max);
+       controller->q_int = fast_fmaxf(fast_fminf(controller->q_int, controller->int_max), -controller->int_max);
+//       controller->q_int = 0;
 
        controller->v_ref = sqrtf(controller->v_d*controller->v_d + controller->v_q*controller->v_q); // used for field weakening
 
@@ -301,6 +315,24 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 //       controller->prev_i_d_error = i_d_error;
 //       controller->prev_i_q_error = i_q_error;
 
+}
+
+void commutate_d(ControllerStruct *controller, EncoderStruct *encoder, float v_d)
+{
+	/* Apply desired voltage to motor d axis */
+		controller->theta_elec = encoder->elec_angle;
+		controller->dtheta_elec = encoder->elec_velocity;
+		controller->v_d = v_d;
+
+       controller->v_max = OVERMODULATION*controller->v_bus*(DTC_MAX-DTC_MIN)*SQRT1_3; //TODO: remove sqrt(1/3)
+       controller->v_d = fast_fmaxf(fast_fminf(controller->v_d, controller->v_max), -controller->v_max);
+       controller->v_q = 0;
+
+       abc(controller->theta_elec + 1.5f*DT*controller->dtheta_elec, controller->v_d, controller->v_q, &controller->v_u, &controller->v_v, &controller->v_w); //inverse dq0 transform on voltages
+       svm(controller->v_bus, controller->v_u, controller->v_v, controller->v_w, &controller->dtc_u, &controller->dtc_v, &controller->dtc_w); //space vector modulation
+
+       set_dtc(controller);
+
     }
 
 
@@ -308,14 +340,14 @@ void torque_control(ControllerStruct *controller){
 
     float ee_torque_des = controller->kp*(controller->p_des - controller->theta_mech) + controller->t_ff + controller->kd*(controller->v_des - controller->dtheta_mech);
     float motor_torque_des = ee_torque_des/(KT*GR);
-    if(fabsf(motor_torque_des) < TORQUE_THRESHOLD){
-    	controller->i_q_des = 0;
-        controller->d_int = controller->d_int/1.9;	// Strategy to reduce integral accumulation
-        controller->q_int = controller->q_int/1.9;
-    }
-    else {
-    	controller->i_q_des = motor_torque_des;
-    }
+    // if(fabsf(motor_torque_des) < TORQUE_THRESHOLD){
+    // 	controller->i_q_des = 0;
+    //     controller->d_int = controller->d_int/1.9;	// Strategy to reduce integral accumulation
+    //     controller->q_int = controller->q_int/1.9;
+    // }
+    // else {
+    // 	controller->i_q_des = motor_torque_des;
+    // }
     controller->i_q_des = motor_torque_des;
     controller->i_d_des = 0.0f;
 
@@ -330,4 +362,5 @@ void zero_commands(ControllerStruct * controller){
 	controller->p_des = 0;
 	controller->v_des = 0;
 	controller->i_q_des = 0;
+	controller->i_d_des = 0.0f;
 }

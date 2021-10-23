@@ -31,12 +31,21 @@ typedef struct{
 	int raw, count, old_count, turns;
 	int m_zero, e_zero;
 	int offset_lut[N_LUT];
+	int off_interp;
 	uint8_t first_sample;
 } EncoderStruct;
 
 
+typedef enum
+{
+    PS_POLL_FOR_DATA,
+    PS_NO_DATA_REQUEST
+}ps_request;
+
+
 void ps_warmup(EncoderStruct * encoder, int n);
-void ps_sample(EncoderStruct * encoder, float dt);
+void ps_poll_for_data(EncoderStruct * encoder);
+void ps_sample(EncoderStruct * encoder, float dt, ps_request request);
 void ps_print(EncoderStruct * encoder, int dt_ms);
 
 #endif /* INC_POSITION_SENSOR_H_ */

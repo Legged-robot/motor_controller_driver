@@ -14,6 +14,7 @@
 #include "usart.h"
 #include "math_ops.h"
 
+
 void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruct * cal, int loop_count){
 	/* Checks phase order, to ensure that positive Q current produces
 	   torque in the positive direction wrt the position sensor */
@@ -54,7 +55,7 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 		cal->next_time_ref += 2.0f*PI_F/W_CAL;			// Request one more electrical cycle
 		cal->ppairs++;									// One more ppair is present
 		if (!cal->done_ordering){
-			// Finished first elecrical cycle, perform phase order check						
+			// Finished first elecrical cycle, perform phase order check
 			int enc_end_count = encoder->raw;
 			if(fabs(cal->enc_start_count - enc_end_count) > ENC_CPR/4){	// Assumption: motor has more than 4 ppairs
 				// overflow of the counter
@@ -77,9 +78,14 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 		commutate(controller, &cal->encoder_p);
 		return;
 	}
-	//motor completed one mechanical revolution
+	else if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
+		controller->i_d_des = 0.0f;
+		commutate(controller, &cal->encoder_p);
+		return;
+	}
 
-	reset_foc(controller);
+	//motor completed one mechanical revolution
+    reset_foc(controller);
 
 	
 	// cal->ppairs = round(2.0f*PI_F/fabsf(enc_end_count-cal->enc_start_count)); //TODO: if sensor is not calibrated, not a valid reference to calculate pparis!
@@ -169,6 +175,11 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 		}
 		return;
     }
+	else if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
+		controller->i_d_des = 0.0f;
+		commutate(controller, &cal->encoder_p);
+		return;
+	}
 
 	reset_foc(controller);
 
@@ -228,8 +239,17 @@ void set_ezero(EncoderStruct *encoder, ControllerStruct *controller, CalStruct *
 		
     	return;
     }
+    else if (!cal->done_ezero){
+		ps_sample(&cal->encoder_p, DT, PS_POLL_FOR_DATA);
+    	cal->done_ezero = 1;
+    }
 
-	ps_sample(&cal->encoder_p, DT); //sample while holding on the zero position
+    if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
+		controller->i_d_des = 0.0f;
+		commutate(controller, &cal->encoder_p);
+		return;
+	}
+
 
 	reset_foc(controller);
 

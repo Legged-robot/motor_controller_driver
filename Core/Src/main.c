@@ -26,6 +26,7 @@
 #include "main.h"
 #include "adc.h"
 #include "can.h"
+#include "dma.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -62,7 +63,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-	#define VERSION_NUM 2.0f
+	#define VERSION_NUM 2.1f
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -91,7 +92,7 @@
 	int *error_array = NULL;
 	int *lut_array = NULL;
 
-	uint8_t Serial2RxBuffer[1];
+	static uint8_t Serial2RxBuffer[1];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -133,6 +134,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_ADC3_Init();
@@ -142,6 +144,23 @@ int main(void)
   MX_TIM1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  	  //Enable ADC and DMA
+		if(HAL_ADC_Start(&hadc2)!= HAL_OK)
+		{
+		  Error_Handler();
+		}
+		if(HAL_ADC_Start(&hadc3)!= HAL_OK)
+		{
+		  Error_Handler();
+		}
+		/* By calling this function - MultiMode will be triggered and DMA Transfer interrupt should be expected
+		 * More details: It starts ADC1, triggers start of the ADC2 and ADC3 which triggers DMA
+		 * */
+		if(HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)controller.adc_data, 3)!= HAL_OK)
+		{
+		  Error_Handler();
+		}
 
   	  /* Load settings from flash */
  	  preference_writer_init(&prefs, 6);
@@ -173,12 +192,12 @@ int main(void)
  	  printf("\r\nFirmware Version Number: %.2f\r\n", VERSION_NUM);
 
  	  /* Controller Setup */
- 	  if(PHASE_ORDER){							// Timer channel to phase mapping
-
- 	  }
- 	  else{
-
- 	  }
+// 	  if(PHASE_ORDER){							// Timer channel to phase mapping
+//
+// 	  }
+// 	  else{
+//
+// 	  }
 
  	  init_controller_params(&controller);
 
@@ -199,8 +218,11 @@ int main(void)
  	  HAL_ADC_Start(&hadc1);
  	  HAL_ADC_Start(&hadc2);
  	  HAL_ADC_Start(&hadc3);
+
+// 	  /*DAC*/
+// 	  HAL_DAC_Start(&hdac,DAC_CHANNEL_1);
  	  /* DRV8323 setup */
- 	  HAL_GPIO_WritePin(DRV_CS, GPIO_PIN_SET ); 	// CS high
+
  	  HAL_GPIO_WritePin(ENABLE_PIN, GPIO_PIN_SET );
  	  HAL_Delay(1);
  	  //drv_calibrate(drv);
@@ -216,22 +238,18 @@ int main(void)
  	  drv_write_OCPCR(drv, TRETRY_50US, DEADTIME_50NS, OCP_NONE, OCP_DEG_8US, VDS_LVL_1_88); //TODO: increase deadtime
  	  HAL_Delay(1);
  	  drv_disable_gd(drv);
- 	  HAL_Delay(1);
- 	  //drv_enable_gd(drv);   */
- 	  printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_CH_IA_offset, controller.adc_CH_IB_offset);
+ 	  HAL_Delay(10);
+// 	  drv_enable_gd(drv);
+ 	  printf("ADC A OFFSET: %d     ADC B OFFSET: %d\r\n", controller.adc_ch_i_offset[0], controller.adc_ch_i_offset[1]);
 
  	  /* Turn on PWM */
  	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
  	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
  	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+ 	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 
  	  /* CAN setup */
  	  CAN_User_Config(&CAN_H, &can_rx, &can_tx);
- 	//   __HAL_CAN_ENABLE_IT(&CAN_H, CAN_IT_RX_FIFO0_MSG_PENDING); // Start can interrupt TODO:handled inside CAN_User_Config
-
- 	  /* Set Interrupt Priorities */
- 	  NVIC_SetPriority(PWM_ISR, 1); // commutation > communication
- 	  NVIC_SetPriority(CAN_ISR, 3);
 
  	  /* Start the FSM */
  	  state.state = SETUP_MODE;
@@ -241,21 +259,44 @@ int main(void)
 
  	  /* Turn on interrupts */
  	  HAL_UART_Receive_IT(&huart2, (uint8_t *)Serial2RxBuffer, 1);
- 	  HAL_TIM_Base_Start_IT(&htim1);
+ 	  __HAL_TIM_ENABLE_IT(&htim1, TIM_IT_CC4);	// Sets the CC interrupt for channel 4
+ 	  HAL_TIM_Base_Start_IT(&htim1);	// Starts counter and enables interrupts
 
+
+ 	 reset_foc(&controller); // TODO: remove
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-	  HAL_Delay(100);
-	  drv_print_faults(drv);
-//	  printf("Can received p_des: %.3f\t  v_des: %.3f\t  kp: %.3f\t  kd: %.3f\t  t_ff: %.3f\t  i_q_ref: %.3f \n\r", controller.p_des, controller.v_des, controller.kp, controller.kd, controller.t_ff, controller.i_q_des);
-	  if(state.state==MOTOR_MODE){
-	  //	  printf("%.2f %.2f %.2f %.2f %.2f\r\n", controller.i_a, controller.i_b, controller.i_d, controller.i_q, controller.dtheta_elec);
-	  }
+	/* All calls should be significantly faster than the loop time - DT */
+	drv_print_faults(drv);
+//	if(controller.tim1_up_flag)
+//	{
+//		HAL_GPIO_WritePin(LED, GPIO_PIN_SET );	// Useful for timing
+//		controller.tim1_up_flag = 0;
+//
+//		HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );	// Useful for timing
+//	}
+//
+//	if(controller.can_fsm_upd_req_flag)
+//	{
+//		controller.can_fsm_upd_req_flag = 0;
+//		update_fsm(&state, controller.can_command);
+//	}
+//
+//	if(controller.usart_fsm_upd_req_flag)
+//	{
+//		controller.usart_fsm_upd_req_flag = 0;
+//		update_fsm(&state, (char) Serial2RxBuffer[0]);
+//	}
+	HAL_Delay(100);
+//	if(state.state==MOTOR_MODE)
+//	{
+//		  printf("%.2f %.2f %.2f %.2f %.2f\r\n", controller.i_a, controller.i_b, controller.i_d, controller.i_q, controller.dtheta_elec);
+//	}
+	//	  printf("Can received p_des: %.3f\t  v_des: %.3f\t  kp: %.3f\t  kd: %.3f\t  t_ff: %.3f\t  i_q_ref: %.3f \n\r", controller.p_des, controller.v_des, controller.kp, controller.kd, controller.t_ff, controller.i_q_des);
 
     /* USER CODE END WHILE */
 
@@ -329,27 +370,50 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	}
 	// Read CAN
 	uint32_t TxMailbox;
-	pack_reply(&can_tx, CAN_ID,  comm_encoder.angle_multiturn[0]/GR, comm_encoder.velocity/GR, controller.i_q_filt*KT*GR);	// Pack response
+	pack_reply(&can_tx, CAN_ID,  comm_encoder.angle_multiturn[N_POS_SAMPLES-1]/GR, controller.i_b, controller.i_a);	// Pack response
 	HAL_CAN_AddTxMessage(&CAN_H, &can_tx.tx_header, can_tx.data, &TxMailbox);	// Send response
 
 	/* Check for special Commands */
-	if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) & (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFC))){
-		update_fsm(&state, MOTOR_CMD);
+	if((can_rx.data[0]==0xFF) && (can_rx.data[1]==0xFF) && (can_rx.data[2]==0xFF) && (can_rx.data[3]==0xFF) && (can_rx.data[4]==0xFF) && (can_rx.data[5]==0xFF) && (can_rx.data[6]==0xFF))
+	{
+//		if (controller.can_fsm_upd_req_flag)	//previous request pending
+//		{
+//			printf("CAN new update received before previous one processed");
+//		}
+		controller.can_fsm_upd_req_flag = 1;
+		switch (can_rx.data[7])
+		{
+		case 0xFC:
+			controller.can_command = MOTOR_CMD;
+			break;
+		case 0xFD:
+			controller.can_command = MENU_CMD;
+			break;
+		case 0xFE:
+			controller.can_command = ZERO_CMD;
+			break;		
+		default:
+			controller.can_fsm_upd_req_flag = 0; //No valid command received
+			break;
 		}
-	else if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) * (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFD))){
-		update_fsm(&state, MENU_CMD);
+		if (controller.can_fsm_upd_req_flag)
+		{
+			update_fsm(&state, controller.can_command);
 		}
-	else if(((can_rx.data[0]==0xFF) & (can_rx.data[1]==0xFF) & (can_rx.data[2]==0xFF) & (can_rx.data[3]==0xFF) * (can_rx.data[4]==0xFF) & (can_rx.data[5]==0xFF) & (can_rx.data[6]==0xFF) & (can_rx.data[7]==0xFE))){
-		update_fsm(&state, ZERO_CMD);
-		}
+	}
 	else{
 		unpack_cmd(can_rx, &controller);	// Unpack commands
 		controller.timeout = 0;					// Reset timeout counter
 	}
 
 }
-void bla(){
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	//controller.usart_fsm_upd_req_flag = 1;
+	update_fsm(&state, (char) Serial2RxBuffer[0]);
+  /* Prevent unused argument(s) compilation warning */
+	HAL_UART_Receive_IT(&huart2, Serial2RxBuffer, 1);
 }
 /* USER CODE END 4 */
 

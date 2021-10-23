@@ -22,20 +22,13 @@ void ps_warmup(EncoderStruct * encoder, int n){
 	}
 }
 
-void ps_sample(EncoderStruct * encoder, float dt){
-	/* updates EncoderStruct encoder with the latest sample
-	 * after elapsed time dt */
-
-	/* Shift around previous samples */
-	encoder->old_angle = encoder->angle_singleturn;
-	for(int i = N_POS_SAMPLES-1; i>0; i--){encoder->angle_multiturn[i] = encoder->angle_multiturn[i-1];}
-	//memmove(&encoder->angle_multiturn[1], &encoder->angle_multiturn[0], (N_POS_SAMPLES-1)*sizeof(float)); // this is much slower for some reason
-
+void ps_poll_for_data(EncoderStruct * encoder)
+{
 	/* SPI read/write */
 	encoder->spi_tx_word = ENC_READ_WORD;
 	HAL_GPIO_WritePin(ENC_CS, GPIO_PIN_RESET ); 	// CS low
-	HAL_StatusTypeDef errorcode = HAL_OK;
-	errorcode = HAL_SPI_TransmitReceive(&ENC_SPI, (uint8_t*)encoder->spi_tx_buff, (uint8_t *)encoder->spi_rx_buff, 1, 100);
+//	HAL_StatusTypeDef errorcode = HAL_OK;
+	HAL_SPI_TransmitReceive(&ENC_SPI, (uint8_t*)encoder->spi_tx_buff, (uint8_t *)encoder->spi_rx_buff, 1, 100);
 //	printf("err_code %d\r\n",errorcode);
 	// errorcode = HAL_SPI_Receive(&ENC_SPI, (uint8_t *)encoder->spi_rx_buff, 1, 100);
 	// while( ENC_SPI.State == HAL_SPI_STATE_BUSY );  					// wait for transmission complete
@@ -45,10 +38,27 @@ void ps_sample(EncoderStruct * encoder, float dt){
 	/* Linearization */
 	int off_1 = encoder->offset_lut[(encoder->raw)>>9];				// lookup table lower entry
 	int off_2 = encoder->offset_lut[((encoder->raw>>9)+1)%128];		// lookup table higher entry
-	int off_interp = off_1 + ((off_2 - off_1)*(encoder->raw - ((encoder->raw>>9)<<9))>>9);     // Interpolate between lookup table entries
-	encoder->count = encoder->raw + off_interp;
+	encoder->off_interp = off_1 + ((off_2 - off_1)*(encoder->raw - ((encoder->raw>>9)<<9))>>9);     // Interpolate between lookup table entries
+}
 
+void ps_sample(EncoderStruct * encoder, float dt, ps_request request)
+{
+	/* updates EncoderStruct encoder with the latest sample
+	 * after elapsed time dt */
+	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
+	/* Shift around previous samples */
+	encoder->old_angle = encoder->angle_singleturn;
+	/* TODO: This command requires 5us - Better solution would be ring buffer: O(1) */
+	memmove(&encoder->angle_multiturn[0], &encoder->angle_multiturn[1], sizeof(*encoder->angle_multiturn)*(N_POS_SAMPLES-1));
 
+	if(request == PS_POLL_FOR_DATA)
+	{
+		ps_poll_for_data(encoder);
+	}
+
+	encoder->count = encoder->raw + encoder->off_interp;
+	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_RESET);
 	/* Real angles in radians */
 	encoder->angle_singleturn = ((float)(encoder->count-M_ZERO))/((float)ENC_CPR);
 	int int_angle = encoder->angle_singleturn;
@@ -73,7 +83,7 @@ void ps_sample(EncoderStruct * encoder, float dt){
 
 
 	/* Multi-turn position */
-	encoder->angle_multiturn[0] = encoder->angle_singleturn + TWO_PI_F*(float)encoder->turns;
+	encoder->angle_multiturn[N_POS_SAMPLES-1] = encoder->angle_singleturn + TWO_PI_F*(float)encoder->turns;
 
 	/* Velocity */
 	/*
@@ -89,9 +99,10 @@ void ps_sample(EncoderStruct * encoder, float dt){
 		encoder->vel2 = -c1/dt;
 */
 	//encoder->velocity = vel2
-	float vel_angle_diff = encoder->angle_multiturn[0] - encoder->angle_multiturn[N_POS_SAMPLES-1];
+	float vel_angle_diff = encoder->angle_multiturn[N_POS_SAMPLES-1] - encoder->angle_multiturn[0];
 	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/(dt*(float)(N_POS_SAMPLES-1));
 	encoder->elec_velocity = encoder->ppairs*encoder->velocity;
+	HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);
 
 }
 
@@ -99,7 +110,7 @@ void ps_print(EncoderStruct * encoder, int dt_ms){
 	printf("Raw: %d", encoder->raw);
 	printf("   Linearized Count: %d", encoder->count);
 	printf("   Single Turn: %f", encoder->angle_singleturn);
-	printf("   Multiturn: %f", encoder->angle_multiturn[0]);
+	printf("   Multiturn: %f", encoder->angle_multiturn[N_POS_SAMPLES-1]);
 	printf("   Electrical: %f", encoder->elec_angle);
 	printf("   Turns:  %d\r\n", encoder->turns);
 	//HAL_Delay(dt_ms);

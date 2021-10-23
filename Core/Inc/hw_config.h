@@ -35,14 +35,14 @@
 
 /* Misc. GPIO */
 #define LED         	GPIOC, GPIO_PIN_5	// LED Pin
-
+#define ADC_INDICATOR   GPIOA, GPIO_PIN_1 // ADC on indicator
 /* CAN */
 #define CAN_H			hcan1				// CAN handle
 
 /* Other hardware-related constants */
 #define I_SCALE 			0.02014160156f  // Amps per A/D Count = 3.3v/(40*0,001*2^12)
 #define V_SCALE 			0.012890625f    // Bus volts per A/D Count
-#define DTC_MAX 			0.3f          	// Max duty cycle
+#define DTC_MAX 			0.6f          	// Max duty cycle
 #define DTC_MIN 			0.0f          	// Min duty cycle
 #define DTC_COMP 			0.000f          // deadtime compensation (100 ns / 25 us)
 #define DT					.000025f		// Loop period = 1/(180MHz/(2*0x8CA))

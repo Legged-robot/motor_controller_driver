@@ -13,9 +13,16 @@
 
 #define CURRENT_THRESHOLD 	0.7f					//Current threshold in Amps
 #define TORQUE_THRESHOLD 	0.2f					//Torque threshold
+#define INTEGRAL_MAX_TO_VMAX_RATIO 0.05f
 typedef struct{
+    volatile uint8_t adc_data_ready_flag;           // Set once the new data is available
+    volatile uint8_t tim1_up_flag;					// TIM1 Interrupt has been generated
+    volatile uint8_t can_fsm_upd_req_flag;			// CAN has sent a command
+    volatile uint8_t usart_fsm_upd_req_flag;		// USART has sent a command
+    volatile char can_command;						// CAN content of the can command
 	uint32_t tim_ch_w;								// Terminal W timer channel
-    int adc_a_raw, adc_b_raw, adc_c_raw, adc_vbus_raw;      // Raw ADC Values
+    uint16_t adc_data[3];									// Store adc data through DMA updates
+    uint16_t adc_ch_i_offset[2];							// Calculated offset of the currentsense channels a and b
     float i_a, i_b, i_c;                                    // Phase currents
     float foc_i_a, foc_i_b, foc_i_c;                                    // Phase currents saved for current foc itterations
     float v_bus, v_bus_filt;                                // DC link voltage
@@ -29,21 +36,20 @@ typedef struct{
     float v_u, v_v, v_w;                                    // Terminal voltages
     float kp_d, kp_q, ki_d, ki_q, kd_d, kd_q, ki_fw, alpha;               // Current loop gains, current reference filter coefficient
     float d_int, q_int;                                     // Current error integrals
-    int adc_CH_IA_offset, adc_CH_IB_offset, adc_c_offset, adc_vbus_offset; 		// ADC offsets
     float i_d_des, i_q_des, i_d_des_filt, i_q_des_filt;     // Current references
-    int loop_count;                                         // Degubbing counter
-    int timeout;                                            // Watchdog counter
+    volatile size_t loop_count;                             // Degubbing counter
+    volatile size_t timeout;                                // Watchdog counter
     int mode;
     int ovp_flag;                                           // Over-voltage flag
     int oc_flag;											// Over-current flag
     int phase_order;
-    union{
+    volatile union{
     	float commands[5];									// Making this easier to pass around without including foc.h everywhere
     	struct{
     		float p_des, v_des, kp, kd, t_ff;                   // Desired position, velocity, gains, torque
     	};
     };
-    float v_max, v_ref, fw_int;                                    // output voltage magnitude, field-weakening integral
+    float v_max, v_ref, fw_int, int_max;                                    // output voltage magnitude, field-weakening integral
     int otw_flag;                                           // Over-temp warning
     float i_max;											// Maximum current
     float inverter_tab[128];								// Inverter linearization table
@@ -61,7 +67,7 @@ typedef struct{
     }   ObserverStruct;
 
 void set_dtc(ControllerStruct *controller);
-void analog_sample(ControllerStruct *controller);
+void calc_analog_data(ControllerStruct *controller);
 void abc(float theta, float d, float q, float *a, float *b, float *c);
 void dq0(float theta, float a, float b, float c, float *d, float *q);
 void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, float *dtc_w);
@@ -70,6 +76,7 @@ void reset_foc(ControllerStruct *controller);
 void reset_observer(ObserverStruct *observer);
 void init_controller_params(ControllerStruct *controller);
 void commutate(ControllerStruct *controller, EncoderStruct *encoder);
+void commutate_d(ControllerStruct *controller, EncoderStruct *encoder, float v_d);
 void torque_control(ControllerStruct *controller);
 void limit_current_ref (ControllerStruct *controller);
 void update_observer(ControllerStruct *controller, ObserverStruct *observer);

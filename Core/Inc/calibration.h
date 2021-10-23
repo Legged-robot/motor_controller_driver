@@ -13,7 +13,7 @@
 
 #define V_CAL 	1.0f							// Calibration voltage
 //#define I_CAL	5.0f
-#define ENC_FULL_MECH_ROTATION_TH 	60			// ENC thershold for full mechanical rotation in ticks
+#define ENC_FULL_MECH_ROTATION_TH 	120			// ENC thershold for full mechanical rotation in ticks
 #define W_CAL 	8.0f							// Calibration speed in rad/s
 #define T1		2.0f							// Cal settling period
 #define PPAIRS_MAX 64
@@ -32,7 +32,7 @@ typedef struct{
 	int ezero;
 	uint8_t phase_order;							// phase order correct (0) or swapped (1)
 	uint8_t done_ordering, done_cal, 
-			done_ppair_detect, done_rl;							// flags for different cals finished 
+			done_ppair_detect, done_rl, done_ezero;							// flags for different cals finished
 	uint16_t sample_count;							// keep track of how many samples taken
 	float next_sample_time;							// time to take next sample
 	int error_arr[N_CAL];

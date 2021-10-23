@@ -86,7 +86,7 @@ void HAL_CAN_MspInit(CAN_HandleTypeDef* canHandle)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     /* CAN1 interrupt Init */
-    HAL_NVIC_SetPriority(CAN1_RX0_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(CAN1_RX0_IRQn, 3, 0);
     HAL_NVIC_EnableIRQ(CAN1_RX0_IRQn);
   /* USER CODE BEGIN CAN1_MspInit 1 */
 
@@ -121,8 +121,9 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 
 /* USER CODE BEGIN 1 */
 
-void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMessage *tx_msg) {
-  /*##-2- Configure the CAN Filter ###########################################*/
+void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMessage *tx_msg)
+{
+	/*##-2- Configure the CAN Filter ###########################################*/
 	rx_msg->filter.FilterBank=9; 	// which filter bank to use from the assigned ones
 	rx_msg->filter.SlaveStartFilterBank = 20; // how many filters to assign to the CAN1 (master can)
 	rx_msg->filter.FilterFIFOAssignment=CAN_FILTER_FIFO0; 	// set fifo assignment
@@ -140,27 +141,27 @@ void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMe
 		Error_Handler();
 	}
 
-  /*##-3- Start the CAN peripheral ###########################################*/
-  if (HAL_CAN_Start(canHandle) != HAL_OK)
-  {
-    /* Start Error */
-    Error_Handler();
-  }
+	/*##-3- Start the CAN peripheral ###########################################*/
+	if (HAL_CAN_Start(canHandle) != HAL_OK)
+	{
+		/* Start Error */
+		Error_Handler();
+	}
 
-  /*##-4- Activate CAN RX notification #######################################*/
-  if (HAL_CAN_ActivateNotification(canHandle, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
-  {
-    /* Notification Error */
-    Error_Handler();
-  }
+	/*##-4- Activate CAN RX notification #######################################*/
+	if (HAL_CAN_ActivateNotification(canHandle, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
+	{
+		/* Notification Error */
+		Error_Handler();
+	}
 
-  /*##-5- Configure Transmission process #####################################*/
-  tx_msg->tx_header.DLC = 8; 			// message size of 8 byte
+	/*##-5- Configure Transmission process #####################################*/
+	tx_msg->tx_header.DLC = 8; 			// message size of 8 byte
 	tx_msg->tx_header.IDE = CAN_ID_STD; 		// set identifier to standard
-  tx_msg->tx_header.RTR = CAN_RTR_DATA;
+	tx_msg->tx_header.RTR = CAN_RTR_DATA;
 	tx_msg->tx_header.RTR = CAN_RTR_DATA; 	// set data type to remote transmission request?
 	tx_msg->tx_header.StdId = CAN_MASTER;  // recipient CAN ID
-  // tx_msg->tx_header.TransmitGlobalTime = DISABLE;
+	// tx_msg->tx_header.TransmitGlobalTime = DISABLE;
 }
 
 /// CAN Reply Packet Structure ///
@@ -174,7 +175,8 @@ void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMe
 /// 2: [velocity[11-4]]
 /// 3: [velocity[3-0], current[11-8]]
 /// 4: [current[7-0]]
-void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t){
+void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t)
+{
     int p_int = float_to_uint(p, P_MIN, P_MAX, 16);
     int v_int = float_to_uint(v, V_MIN, V_MAX, 12);
     int t_int = float_to_uint(t, -I_MAX*KT*GR, I_MAX*KT*GR, 12);
@@ -184,7 +186,7 @@ void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t){
     msg->data[3] = v_int>>4;
     msg->data[4] = ((v_int&0xF)<<4) | (t_int>>8);
     msg->data[5] = t_int&0xFF;
-    }
+}
 
 /// CAN Command Packet Structure ///
 /// 16 bit position command, between -4*pi and 4*pi
