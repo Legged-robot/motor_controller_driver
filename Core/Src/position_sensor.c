@@ -45,12 +45,15 @@ void ps_sample(EncoderStruct * encoder, float dt, ps_request request)
 {
 	/* updates EncoderStruct encoder with the latest sample
 	 * after elapsed time dt */
-	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
+//	HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_SET);
+//	HAL_GPIO_WritePin(LED, GPIO_PIN_SET);
 	/* Shift around previous samples */
 	encoder->old_angle = encoder->angle_singleturn;
 	/* TODO: This command requires 5us - Better solution would be ring buffer: O(1) */
-	memmove(&encoder->angle_multiturn[0], &encoder->angle_multiturn[1], sizeof(*encoder->angle_multiturn)*(N_POS_SAMPLES-1));
+//	for (int i = 1; i < N_POS_SAMPLES; i++){
+//		encoder->angle_multiturn[i-1] = encoder->angle_multiturn[i];
+//	}
+	 memmove(&encoder->angle_multiturn[0], &encoder->angle_multiturn[1], sizeof(*encoder->angle_multiturn)*(N_POS_SAMPLES-1));
 
 	if(request == PS_POLL_FOR_DATA)
 	{
@@ -58,7 +61,7 @@ void ps_sample(EncoderStruct * encoder, float dt, ps_request request)
 	}
 
 	encoder->count = encoder->raw + encoder->off_interp;
-	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_RESET);
 	/* Real angles in radians */
 	encoder->angle_singleturn = ((float)(encoder->count-M_ZERO))/((float)ENC_CPR);
 	int int_angle = encoder->angle_singleturn;
@@ -100,15 +103,21 @@ void ps_sample(EncoderStruct * encoder, float dt, ps_request request)
 */
 	//encoder->velocity = vel2
 	float vel_angle_diff = encoder->angle_multiturn[N_POS_SAMPLES-1] - encoder->angle_multiturn[0];
-	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/(dt*(float)(N_POS_SAMPLES-1));
+//	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/(dt*(float)(N_POS_SAMPLES-1));
+	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/( (float)((N_POS_SAMPLES-1)*encoder->enc_loop_counter) * 0.0000025 );
+	if(fabsf(encoder->velocity)>200){
+		printf("  Velocity: %f", encoder->velocity);
+	}
+	encoder->enc_loop_counter = 0;
 	encoder->elec_velocity = encoder->ppairs*encoder->velocity;
-	HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);
 
 }
 
 void ps_print(EncoderStruct * encoder, int dt_ms){
 	printf("Raw: %d", encoder->raw);
-	printf("   Linearized Count: %d", encoder->count);
+	// printf("   Linearized Count: %d", encoder->count);
+	printf("   Velocity: %f", encoder->velocity);
 	printf("   Single Turn: %f", encoder->angle_singleturn);
 	printf("   Multiturn: %f", encoder->angle_multiturn[N_POS_SAMPLES-1]);
 	printf("   Electrical: %f", encoder->elec_angle);

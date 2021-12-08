@@ -14,7 +14,8 @@
 #include "user_config.h"
 #include "observer.h"
 
-void set_dtc(ControllerStruct *controller){
+void set_dtc(ControllerStruct *controller)
+{
 
 	/* Invert duty cycle if that's how hardware is configured */
 
@@ -42,10 +43,11 @@ void set_dtc(ControllerStruct *controller){
 	// dump_state();
 }
 
-void calc_analog_data (ControllerStruct *controller){
+void calc_analog_data (ControllerStruct *controller)
+{
 	/* Sampe ADCs */
 	/* Handle phase order swapping so that voltage/current/torque match encoder direction */
-    // HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_SET);
+    // HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_SET);
 
     // By now, new ADC data should be available
     if(!controller->adc_data_ready_flag)
@@ -69,10 +71,11 @@ void calc_analog_data (ControllerStruct *controller){
     controller->i_c = -controller->i_a - controller->i_b;
 
 	controller->v_bus = (float)controller->adc_data[2]*V_SCALE;
-	// HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_RESET);
+	// HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_RESET);
 }
 
-void abc( float theta, float d, float q, float *a, float *b, float *c){
+void abc( float theta, float d, float q, float *a, float *b, float *c)
+{
     /* Inverse DQ0 Transform
     Phase current amplitude = lengh of dq vector
     i.e. iq = 1, id = 0, peak phase current of 1 */
@@ -83,10 +86,11 @@ void abc( float theta, float d, float q, float *a, float *b, float *c){
     *a = cf*d - sf*q;
     *b = (SQRT3_2*sf-.5f*cf)*d - (-SQRT3_2*cf-.5f*sf)*q;
     *c = (-SQRT3_2*sf-.5f*cf)*d - (SQRT3_2*cf-.5f*sf)*q;
-    }
+}
 
 
-void dq0(float theta, float a, float b, float c, float *d, float *q){
+void dq0(float theta, float a, float b, float c, float *d, float *q)
+{
     /* DQ0 Transform
     Phase current amplitude = lengh of dq vector
     i.e. iq = 1, id = 0, peak phase current of 1*/
@@ -97,9 +101,10 @@ void dq0(float theta, float a, float b, float c, float *d, float *q){
     *d = 0.6666667f*(cf*a + (SQRT3_2*sf-.5f*cf)*b + (-SQRT3_2*sf-.5f*cf)*c);   ///Faster DQ0 Transform
     *q = 0.6666667f*(-sf*a - (-SQRT3_2*cf-.5f*sf)*b - (SQRT3_2*cf-.5f*sf)*c);
 
-    }
+}
 
-void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, float *dtc_w){
+void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, float *dtc_w)
+{
     /* Space Vector Modulation
      u,v,w amplitude = v_bus for full modulation depth */
 
@@ -111,9 +116,10 @@ void svm(float v_max, float u, float v, float w, float *dtc_u, float *dtc_v, flo
     *dtc_v = fast_fminf(fast_fmaxf(((OVERMODULATION*(v -v_offset)/v_max)*dtc_half_range + dtc_midpoint ), DTC_MIN), DTC_MAX);
     *dtc_w = fast_fminf(fast_fmaxf(((OVERMODULATION*(w -v_offset)/v_max)*dtc_half_range + dtc_midpoint ), DTC_MIN), DTC_MAX);
 
-    }
+}
 
-void zero_current(ControllerStruct *controller){
+void zero_current(ControllerStruct *controller)
+{
 	/* Measure zero-current ADC offset */
 
     uint32_t adc_ch_ia_offset = 0;
@@ -124,8 +130,8 @@ void zero_current(ControllerStruct *controller){
     controller->dtc_w = 0.f;
     set_dtc(controller);
 
-    for (int i = 0; i<n; i++){               // Average n samples
-        controller->adc_data_ready_flag = 0;        // clear flag
+    for (int i = 0; i<n; i++){                  // Average n samples
+        controller->adc_data_ready_flag = 0;    //Indicate that new data is required for next iteration
 		/* Manually start ADC - Possible based on Reference Manual: 13.6
 		 * Software source trigger events can be generated ...
 		*/
@@ -144,9 +150,10 @@ void zero_current(ControllerStruct *controller){
     controller->adc_ch_i_offset[0] = adc_ch_ia_offset/n;
     controller->adc_ch_i_offset[1] = adc_ch_ib_offset/n;
 
-    }
+}
 
-void init_controller_params(ControllerStruct *controller){
+void init_controller_params(ControllerStruct *controller)
+{
 
 	controller->ki_d = KI_D;
     controller->ki_q = KI_Q;
@@ -164,7 +171,8 @@ void init_controller_params(ControllerStruct *controller){
     zero_commands(controller);
 }
 
-void reset_foc(ControllerStruct *controller){
+void reset_foc(ControllerStruct *controller)
+{
 
 	TIM_PWM.Instance->CCR3 = ((TIM_PWM.Instance->ARR))*(0.5f);
 	TIM_PWM.Instance->CCR1 = ((TIM_PWM.Instance->ARR))*(0.5f);
@@ -183,9 +191,10 @@ void reset_foc(ControllerStruct *controller){
     controller->fw_int = 0;
     controller->otw_flag = 0;
 
-    }
+}
 
-void reset_observer(ObserverStruct *observer){
+void reset_observer(ObserverStruct *observer)
+{
 /*
     observer->temperature = 25.0f;
     observer->temp_measured = 25.0f;
@@ -246,6 +255,36 @@ void field_weaken(ControllerStruct *controller)
        controller->i_q_des = fast_fmaxf(fast_fminf(controller->i_q_des, q_max), -q_max);
 
 }
+
+uint8_t safe_exit_commutate(ControllerStruct *controller,  EncoderStruct *encoder, foc_request request)
+{
+	/* Don't stop commutating if there are high currents or FW happening */
+	double abs_i_q_filt = fabs(controller->i_q_filt);
+	double abs_i_d_filt = fabs(controller->i_d_filt);
+	if( (abs_i_q_filt < 1.0f) && (abs_i_d_filt < 1.0f) )
+	{
+		reset_foc(controller);
+		/* Additional safety: wait for current to reduce further after the PWM control reset*/
+		if( (abs_i_q_filt < 0.7f) && (abs_i_d_filt < 0.7f) )
+		{
+			return 1;
+		}
+	}
+	else
+	{
+		zero_commands(controller);		// Set commands to zero
+	}
+
+	/* Request might be issued in cases when explicit
+	 * call to commutate is required in order to continue
+	 * commutation for further current reduction
+	 * */
+	if (request == FOC_CONTINUE_COMMUTATE)
+	{
+		commutate(controller, encoder);
+	}
+}
+
 void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 {
 	/* Do Field Oriented Control */
@@ -266,12 +305,12 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 //
 //       controller->i_d = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_d;	//Introduce current threshold
 //       controller->i_q = i_dq < CURRENT_THRESHOLD ? 0 : controller->i_q;
-//
+       /* Filtered current */
        controller->i_q_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_q_filt + CURRENT_FILT_ALPHA*controller->i_q;	// these aren't used for control but are sometimes nice for debugging
        controller->i_d_filt = (1.0f-CURRENT_FILT_ALPHA)*controller->i_d_filt + CURRENT_FILT_ALPHA*controller->i_d;
        
-       /* Saturate voltage at the beggining of the callibration loops*/
-       controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;	// used for voltage saturation
+       /* Filtered bus voltage */
+       controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;
 
        controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //TODO: remove sqrt(1/3)
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
@@ -317,9 +356,10 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
 
 }
 
+/* Apply desired voltage to motor d axis */
 void commutate_d(ControllerStruct *controller, EncoderStruct *encoder, float v_d)
 {
-	/* Apply desired voltage to motor d axis */
+
 		controller->theta_elec = encoder->elec_angle;
 		controller->dtheta_elec = encoder->elec_velocity;
 		controller->v_d = v_d;
@@ -333,10 +373,11 @@ void commutate_d(ControllerStruct *controller, EncoderStruct *encoder, float v_d
 
        set_dtc(controller);
 
-    }
+}
 
 
-void torque_control(ControllerStruct *controller){
+void torque_control(ControllerStruct *controller)
+{
 
     float ee_torque_des = controller->kp*(controller->p_des - controller->theta_mech) + controller->t_ff + controller->kd*(controller->v_des - controller->dtheta_mech);
     float motor_torque_des = ee_torque_des/(KT*GR);
@@ -351,16 +392,17 @@ void torque_control(ControllerStruct *controller){
     controller->i_q_des = motor_torque_des;
     controller->i_d_des = 0.0f;
 
-    }
+}
 
 
 
-void zero_commands(ControllerStruct * controller){
-	controller->t_ff = 0;
-	controller->kp = 0;
-	controller->kd = 0;
-	controller->p_des = 0;
-	controller->v_des = 0;
-	controller->i_q_des = 0;
+void zero_commands(ControllerStruct * controller)
+{
+	controller->t_ff = 0.0f;
+	controller->kp = 0.0f;
+	controller->kd = 0.0f;
+	controller->p_des = 0.0f;
+	controller->v_des = 0.0f;
+	controller->i_q_des = 0.0f;
 	controller->i_d_des = 0.0f;
 }

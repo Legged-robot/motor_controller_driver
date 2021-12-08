@@ -15,7 +15,7 @@
 
 #define N_POS_SAMPLES 20						// Number of position samples to store.  should put this somewhere else...
 #define N_LUT 128
-#define ZERO_ERROR_OFFSET_COUNTS 5				// Compensate error when setting the new zero position
+#define ZERO_ERROR_OFFSET_COUNTS 5				// Overcome sensor noise when setting the mechanical zero
 #define VELOCITY_DETECTION_THRESHOLD 0.0009f	// Dont calculate velocity for angle diff smaller than threshold
 typedef struct{
 	union{
@@ -33,6 +33,7 @@ typedef struct{
 	int offset_lut[N_LUT];
 	int off_interp;
 	uint8_t first_sample;
+	volatile size_t enc_loop_counter;                         // Reference for in between samples loop count
 } EncoderStruct;
 
 

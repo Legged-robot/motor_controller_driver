@@ -73,16 +73,15 @@
 		 case MOTOR_MODE:
 			 /* If CAN has timed out, reset all commands */
 			 if((CAN_TIMEOUT > 0 ) && (controller.timeout > CAN_TIMEOUT)){
-				 zero_commands(&controller);
-				 reset_foc(&controller);
+				safe_exit_commutate(&controller, &comm_encoder, FOC_CONTINUE_COMMUTATE);
 			 }
 			 /* Otherwise, commutate */
 			 else{
-//				 torque_control(&controller);
-//				 field_weaken(&controller);
-//				 commutate(&controller, &comm_encoder);
-//				 controller.timeout ++;	//TODO: uncomment
-				 commutate_d(&controller, &comm_encoder,1);
+				torque_control(&controller);
+				field_weaken(&controller);
+				commutate(&controller, &comm_encoder);
+				controller.timeout ++;
+//				 commutate_d(&controller, &comm_encoder,1); // Test function for d axis current (should only strengthen current position)
 			 }
 			 break;
 
@@ -116,7 +115,6 @@
 				//printf("Entering Encoder Mode\r\n");
 				break;
 			case MOTOR_MODE:
-
 				//printf("Entering Motor Mode\r\n");
 				HAL_GPIO_WritePin(LED, GPIO_PIN_SET );
 				reset_foc(&controller);
@@ -125,7 +123,7 @@
 			case CALIBRATION_MODE:
 				//printf("Entering Calibration Mode\r\n");
 				/* zero out all calibrations before starting */
-				controller.loop_count = 0; // TODO: supsicion on loop_counter overflow, might be overprotecting
+				controller.loop_count = 0;
 				comm_encoder_cal.done_cal = 0;
 				comm_encoder_cal.done_ordering = 0;
 				comm_encoder_cal.done_ppair_detect = 0;
@@ -158,21 +156,18 @@
 				break;
 			case MOTOR_MODE:
 				/* Don't stop commutating if there are high currents or FW happening */
-				if( (fabs(controller.i_q_filt)<1.0f) && (fabs(controller.i_d_filt)<1.0f) ){
-					fsmstate->ready = 1;
-					drv_disable_gd(drv);
-					//printf("Leaving Motor Mode\r\n");
+				if (safe_exit_commutate(&controller, &comm_encoder, FOC_NO_REQUEST))	// Commutation will be performed further in control loop
+				{
 					HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
+					fsmstate->ready = 1;
+					drv_disable_gd(drv);	// disable the driver
 				}
-				zero_commands(&controller);		// Set commands to zero
-//				reset_foc(&controller);
 				break;
 			case CALIBRATION_MODE:
 				//printf("Exiting Calibration Mode\r\n");
 				drv_disable_gd(drv);
 				//free(error_array);
 				//free(lut_array);
-
 				fsmstate->ready = 1;
 				break;
 		}

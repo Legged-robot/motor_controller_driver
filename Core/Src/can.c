@@ -124,10 +124,11 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMessage *tx_msg)
 {
 	/*##-2- Configure the CAN Filter ###########################################*/
+	/* Can configuration brief https://controllerstech.com/can-protocol-in-stm32/ */
 	rx_msg->filter.FilterBank=9; 	// which filter bank to use from the assigned ones
 	rx_msg->filter.SlaveStartFilterBank = 20; // how many filters to assign to the CAN1 (master can)
 	rx_msg->filter.FilterFIFOAssignment=CAN_FILTER_FIFO0; 	// set fifo assignment
-	rx_msg->filter.FilterIdHigh=CAN_ID<<5; 				// CAN ID
+	rx_msg->filter.FilterIdHigh=CAN_ID<<5; 				// CAN ID - Standard ID in message starts from <<5 bit in idHigh
 	rx_msg->filter.FilterIdLow=0x0;
 	rx_msg->filter.FilterMaskIdHigh=0x7FF<<5;
 	rx_msg->filter.FilterMaskIdLow=0x0;
@@ -158,7 +159,6 @@ void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMe
 	/*##-5- Configure Transmission process #####################################*/
 	tx_msg->tx_header.DLC = 8; 			// message size of 8 byte
 	tx_msg->tx_header.IDE = CAN_ID_STD; 		// set identifier to standard
-	tx_msg->tx_header.RTR = CAN_RTR_DATA;
 	tx_msg->tx_header.RTR = CAN_RTR_DATA; 	// set data type to remote transmission request?
 	tx_msg->tx_header.StdId = CAN_MASTER;  // recipient CAN ID
 	// tx_msg->tx_header.TransmitGlobalTime = DISABLE;
@@ -180,12 +180,12 @@ void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t)
     int p_int = float_to_uint(p, P_MIN, P_MAX, 16);
     int v_int = float_to_uint(v, V_MIN, V_MAX, 12);
     int t_int = float_to_uint(t, -I_MAX*KT*GR, I_MAX*KT*GR, 12);
-    msg->data[0] = id;
-    msg->data[1] = p_int>>8;
-    msg->data[2] = p_int&0xFF;
-    msg->data[3] = v_int>>4;
-    msg->data[4] = ((v_int&0xF)<<4) | (t_int>>8);
-    msg->data[5] = t_int&0xFF;
+    msg->data[0] = p_int>>8;
+    msg->data[1] = p_int&0xFF;
+    msg->data[2] = v_int>>4;
+    msg->data[3] = ((v_int&0xF)<<4) | (t_int>>8);
+    msg->data[4] = t_int&0xFF;
+    msg->data[5] = id;
 }
 
 /// CAN Command Packet Structure ///

@@ -11,17 +11,14 @@
 #include <stdint.h>
 #include "position_sensor.h"
 
-#define CURRENT_THRESHOLD 	0.7f					//Current threshold in Amps
-#define TORQUE_THRESHOLD 	0.2f					//Torque threshold
-#define INTEGRAL_MAX_TO_VMAX_RATIO 0.05f
+// #define CURRENT_THRESHOLD 	0.7f					//Current threshold in Amps
+// #define TORQUE_THRESHOLD 	0.2f					//Torque threshold
 typedef struct{
     volatile uint8_t adc_data_ready_flag;           // Set once the new data is available
-    volatile uint8_t tim1_up_flag;					// TIM1 Interrupt has been generated
     volatile uint8_t can_fsm_upd_req_flag;			// CAN has sent a command
-    volatile uint8_t usart_fsm_upd_req_flag;		// USART has sent a command
     volatile char can_command;						// CAN content of the can command
 	uint32_t tim_ch_w;								// Terminal W timer channel
-    uint16_t adc_data[3];									// Store adc data through DMA updates
+    uint16_t adc_data[5];									// Store adc data through DMA updates
     uint16_t adc_ch_i_offset[2];							// Calculated offset of the currentsense channels a and b
     float i_a, i_b, i_c;                                    // Phase currents
     float foc_i_a, foc_i_b, foc_i_c;                                    // Phase currents saved for current foc itterations
@@ -66,6 +63,12 @@ typedef struct{
     float delta_t;											// Temperature rise
     }   ObserverStruct;
 
+typedef enum
+{
+	FOC_CONTINUE_COMMUTATE,
+	FOC_NO_REQUEST
+}foc_request;
+
 void set_dtc(ControllerStruct *controller);
 void calc_analog_data(ControllerStruct *controller);
 void abc(float theta, float d, float q, float *a, float *b, float *c);
@@ -75,6 +78,7 @@ void zero_current(ControllerStruct *controller);
 void reset_foc(ControllerStruct *controller);
 void reset_observer(ObserverStruct *observer);
 void init_controller_params(ControllerStruct *controller);
+uint8_t safe_exit_commutate(ControllerStruct *controller,  EncoderStruct *encoder, foc_request request);
 void commutate(ControllerStruct *controller, EncoderStruct *encoder);
 void commutate_d(ControllerStruct *controller, EncoderStruct *encoder, float v_d);
 void torque_control(ControllerStruct *controller);

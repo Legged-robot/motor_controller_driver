@@ -29,13 +29,13 @@
 /* SPI encoder */
 #define ENC_SPI			hspi3				// Encoder SPI handle
 #define ENC_CS			GPIOA, GPIO_PIN_15	// Encoder SPI CS pin
-#define ENC_CPR			32768				// Encoder counts per revolution - 15 bit output
+#define ENC_CPR			65535				// Encoder counts per revolution - 16 bit output = 2^16 - 1
 #define INV_CPR			1.0f/ENC_CPR
 #define ENC_READ_WORD	0x00				// Encoder read command
 
 /* Misc. GPIO */
 #define LED         	GPIOC, GPIO_PIN_5	// LED Pin
-#define ADC_INDICATOR   GPIOA, GPIO_PIN_1 // ADC on indicator
+#define DEBUG_LED   GPIOE, GPIO_PIN_2 // ADC on indicator
 /* CAN */
 #define CAN_H			hcan1				// CAN handle
 
@@ -47,7 +47,6 @@
 #define DTC_COMP 			0.000f          // deadtime compensation (100 ns / 25 us)
 #define DT					.000025f		// Loop period = 1/(180MHz/(2*0x8CA))
 #define EN_ENC_LINEARIZATION 1				// Enable/disable encoder linearization
-
 
 /* Current controller */
 #define L_D .000003f				// D axis inductance
@@ -62,6 +61,7 @@
 #define OVERMODULATION 1.15f        // 1.0 = no overmodulation
 #define CURRENT_FILT_ALPHA	.01f	// 1st order d/q current filter (not used in control)
 #define VBUS_FILT_ALPHA		.1f		// 1st order bus voltage filter
+#define INTEGRAL_MAX_TO_VMAX_RATIO 0.05f    // Reduce maximum integral value
 
 #define D_INT_LIM V_BUS/(K_D*KI_D)  // Amps*samples
 #define Q_INT_LIM V_BUS/(K_Q*KI_Q)  // Amps*samples

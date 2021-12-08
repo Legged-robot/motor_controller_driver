@@ -71,6 +71,7 @@
 extern DMA_HandleTypeDef hdma_adc1;
 extern CAN_HandleTypeDef hcan1;
 extern TIM_HandleTypeDef htim1;
+extern TIM_HandleTypeDef htim2;
 extern UART_HandleTypeDef huart2;
 /* USER CODE BEGIN EV */
 
@@ -234,18 +235,17 @@ void CAN1_RX0_IRQHandler(void)
 void TIM1_UP_TIM10_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_UP_TIM10_IRQn 0 */
-	/* Measuring time with GPIO gave 8.8us required for whole interrupt routine execution*/
-//	HAL_GPIO_WritePin(LED, GPIO_PIN_SET );	// Useful for timing
+	/* Measuring time with GPIO gave 8us required for whole interrupt routine execution*/
+//	HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_SET);	// Useful for timing
+
 	/* Start ADCs - should be always first thing to do on this interrupt*/
 	SET_BIT(ADC_CH_MAIN.Instance->CR2, ADC_CR2_SWSTART);
 
 	/* increment loop count */
 	controller.loop_count++;
-//	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_SET);
 	/* Process position sensor data - requires optimisation: currently takes 6us */
 	ps_sample(&comm_encoder, DT, PS_NO_DATA_REQUEST);
 
-//	HAL_GPIO_WritePin(ADC_INDICATOR, GPIO_PIN_RESET);
 	/* Process ADC data */
 	calc_analog_data(&controller);
 
@@ -254,10 +254,7 @@ void TIM1_UP_TIM10_IRQHandler(void)
 
 	__HAL_TIM_CLEAR_IT(&htim1, TIM_IT_UPDATE);
 
-	/* Indicate that update flag has been raised */
-	controller.tim1_up_flag = 1;
-
-	//	HAL_GPIO_WritePin(LED, GPIO_PIN_RESET );
+//	HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_RESET);
 	return; //Ignore the default implementation of handler
 
   /* USER CODE END TIM1_UP_TIM10_IRQn 0 */
@@ -273,7 +270,7 @@ void TIM1_UP_TIM10_IRQHandler(void)
 void TIM1_CC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_CC_IRQn 0 */
-	/* Measuring time with GPIO gave 6.2us required for whole interrupt routine execution
+	/* Measuring time with GPIO gave 6.4us required for whole interrupt routine execution
 	 * NOTE: This routine is running based on TIM_CHANNEL_4 CC event
 	 * which is adjusted so it will get finished before  TIM1_UP Interrupt is raised
 	 * */
@@ -288,6 +285,26 @@ void TIM1_CC_IRQHandler(void)
   /* USER CODE BEGIN TIM1_CC_IRQn 1 */
   
   /* USER CODE END TIM1_CC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM2 global interrupt.
+  */
+void TIM2_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM2_IRQn 0 */
+  /* This IRQ executes at fast speed -  it must not take much time
+   *
+  */
+//	HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_SET);	// Useful for timing
+	comm_encoder.enc_loop_counter++;  //Highest interrupt priority loop counter
+	__HAL_TIM_CLEAR_IT(&htim2, TIM_IT_CC2);
+	return;
+  /* USER CODE END TIM2_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim2);
+  /* USER CODE BEGIN TIM2_IRQn 1 */
+//  HAL_GPIO_WritePin(DEBUG_LED, GPIO_PIN_RESET);
+  /* USER CODE END TIM2_IRQn 1 */
 }
 
 /**
@@ -313,10 +330,9 @@ void DMA2_Stream0_IRQHandler(void)
 	/* Measuring time with GPIO gave approximately 1.8us when 3Cycles ADC is used
 	 * Similar but not constant time is when using 15Cycles ADC
 	 * */
-	controller.adc_data_ready_flag = 1;
-
     /* Clear the transfer complete flag */
 	DMA_Base_Registers *regs = (DMA_Base_Registers *)hdma_adc1.StreamBaseAddress;
+	adc_data_ready_update(true);
 	regs->IFCR = DMA_FLAG_TCIF0_4 << hdma_adc1.StreamIndex;
 	regs->IFCR = DMA_FLAG_HTIF0_4 << hdma_adc1.StreamIndex;	//HAL enables half transfer interrupt
     /*TODO: handle errors*/

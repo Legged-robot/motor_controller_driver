@@ -78,14 +78,9 @@ void order_phases(EncoderStruct *encoder, ControllerStruct *controller, CalStruc
 		commutate(controller, &cal->encoder_p);
 		return;
 	}
-	else if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
-		controller->i_d_des = 0.0f;
-		commutate(controller, &cal->encoder_p);
+	else if( !safe_exit_commutate(controller, &cal->encoder_p, FOC_CONTINUE_COMMUTATE) ){
 		return;
 	}
-
-	//motor completed one mechanical revolution
-    reset_foc(controller);
 
 	
 	// cal->ppairs = round(2.0f*PI_F/fabsf(enc_end_count-cal->enc_start_count)); //TODO: if sensor is not calibrated, not a valid reference to calculate pparis!
@@ -175,13 +170,9 @@ void calibrate_encoder(EncoderStruct *encoder, ControllerStruct *controller, Cal
 		}
 		return;
     }
-	else if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
-		controller->i_d_des = 0.0f;
-		commutate(controller, &cal->encoder_p);
+	else if( !safe_exit_commutate(controller, &cal->encoder_p, FOC_CONTINUE_COMMUTATE) ){
 		return;
 	}
-
-	reset_foc(controller);
 
     // Calculate average offset
     int zero_mean = 0;
@@ -244,12 +235,9 @@ void set_ezero(EncoderStruct *encoder, ControllerStruct *controller, CalStruct *
     	cal->done_ezero = 1;
     }
 
-    if( (fabs(controller->i_q_filt)>1.0f) || (fabs(controller->i_d_filt)>1.0f) ){
-		controller->i_d_des = 0.0f;
-		commutate(controller, &cal->encoder_p);
+    if( !safe_exit_commutate(controller, &cal->encoder_p, FOC_CONTINUE_COMMUTATE) ){
 		return;
 	}
-
 
 	reset_foc(controller);
 
