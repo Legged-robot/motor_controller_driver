@@ -15,7 +15,7 @@
 //#define I_CAL	5.0f
 #define ENC_FULL_MECH_ROTATION_TH 	120			// ENC thershold for full mechanical rotation in ticks
 #define W_CAL 	8.0f							// Calibration speed in rad/s
-#define T1		2.0f							// Cal settling period
+#define T1		0.5f							// Cal settling period
 #define PPAIRS_MAX 64
 #define SAMPLES_PER_PPAIR N_LUT
 #define N_CAL SAMPLES_PER_PPAIR*PPAIRS_MAX		// Calibration lookup table maximum length, so I don't have to deal with dynamic allocation based on number of pole pairs

@@ -24,6 +24,7 @@
 #include "hw_config.h"
 #include "user_config.h"
 #include "math_ops.h"
+#include "stdio.h"
 /* USER CODE END 0 */
 
 CAN_HandleTypeDef hcan1;
@@ -177,15 +178,27 @@ void CAN_User_Config(CAN_HandleTypeDef* canHandle, CANRxMessage *rx_msg, CANTxMe
 /// 4: [current[7-0]]
 void pack_reply(CANTxMessage *msg, uint8_t id, float p, float v, float t)
 {
-    int p_int = float_to_uint(p, P_MIN, P_MAX, 16);
-    int v_int = float_to_uint(v, V_MIN, V_MAX, 12);
-    int t_int = float_to_uint(t, -I_MAX*KT*GR, I_MAX*KT*GR, 12);
+    uint32_t p_int = float_to_uint(p, P_MIN, P_MAX, 16);
+    uint32_t v_int = float_to_uint(v, V_MIN, V_MAX, 12);
+    uint32_t t_int = float_to_uint(t, -I_MAX, I_MAX, 12);
     msg->data[0] = p_int>>8;
     msg->data[1] = p_int&0xFF;
     msg->data[2] = v_int>>4;
-    msg->data[3] = ((v_int&0xF)<<4) | (t_int>>8);
+    msg->data[3] = ((v_int&0xF)<<4) | ((t_int>>8)&0xF);
     msg->data[4] = t_int&0xFF;
     msg->data[5] = id;
+//	if ((p_int < 400) || (p_int>65200)){
+//		printf("check!");
+//		return;
+//	}
+//	if ((v_int < 200) || (v_int>3800)){
+//		printf("check!");
+//		return;
+//	}
+//	if ((t_int < 200) || (t_int>3800)){
+//		printf("check!");
+//		return;
+//	}
 }
 
 /// CAN Command Packet Structure ///

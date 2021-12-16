@@ -10,6 +10,7 @@
 #define LUT_MULT	81.4873308631f
 
 #include "math.h"
+#include "stdint.h"
 
 float fast_fmaxf(float x, float y);
 float fast_fminf(float x, float y);
@@ -18,8 +19,8 @@ float fminf3(float x, float y, float z);
 //float roundf(float x);
 void limit_norm(float *x, float *y, float limit);
 void limit(float *x, float min, float max);
-int float_to_uint(float x, float x_min, float x_max, int bits);
-float uint_to_float(int x_int, float x_min, float x_max, int bits);
+uint32_t float_to_uint(float x, float x_min, float x_max, uint32_t bits);
+float uint_to_float(uint32_t x_int, float x_min, float x_max, uint32_t bits);
 float sin_lut(float theta);
 float cos_lut(float theta);
 

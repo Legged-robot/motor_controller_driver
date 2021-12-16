@@ -353,6 +353,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	uint32_t TxMailbox;
 	// Data that can be sent also: controller.i_a, controller.i_b
 	pack_reply(&can_tx, CAN_ID,  comm_encoder.angle_multiturn[N_POS_SAMPLES-1]/GR, comm_encoder.velocity, controller.i_q);	// Pack response
+//	pack_reply(&can_tx, CAN_ID,  comm_encoder.angle_multiturn[N_POS_SAMPLES-1]/GR, controller.i_a, controller.i_b);
 	HAL_CAN_AddTxMessage(&CAN_H, &can_tx.tx_header, can_tx.data, &TxMailbox);	// Send response
 
 	/* Check for special Commands */

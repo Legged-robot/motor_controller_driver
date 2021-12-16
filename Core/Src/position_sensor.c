@@ -104,10 +104,10 @@ void ps_sample(EncoderStruct * encoder, float dt, ps_request request)
 	//encoder->velocity = vel2
 	float vel_angle_diff = encoder->angle_multiturn[N_POS_SAMPLES-1] - encoder->angle_multiturn[0];
 //	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/(dt*(float)(N_POS_SAMPLES-1));
-	encoder->velocity = (fabsf(vel_angle_diff) < VELOCITY_DETECTION_THRESHOLD ? 0 : vel_angle_diff)/( (float)((N_POS_SAMPLES-1)*encoder->enc_loop_counter) * 0.0000025 );
-	if(fabsf(encoder->velocity)>200){
-		printf("  Velocity: %f", encoder->velocity);
-	}
+	encoder->velocity = vel_angle_diff / ( (float)((N_POS_SAMPLES-1)*encoder->enc_loop_counter) * 0.0000025 );
+	// if(fabsf(encoder->velocity)>200){
+	// 	printf("  Velocity: %f", encoder->velocity);
+	// }
 	encoder->enc_loop_counter = 0;
 	encoder->elec_velocity = encoder->ppairs*encoder->velocity;
 //	HAL_GPIO_WritePin(LED, GPIO_PIN_RESET);

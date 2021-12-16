@@ -16,6 +16,7 @@
 typedef struct{
     volatile uint8_t adc_data_ready_flag;           // Set once the new data is available
     volatile uint8_t can_fsm_upd_req_flag;			// CAN has sent a command
+    volatile uint8_t fsmstate;						// Holding fsm state for control
     volatile char can_command;						// CAN content of the can command
 	uint32_t tim_ch_w;								// Terminal W timer channel
     uint16_t adc_data[5];									// Store adc data through DMA updates
@@ -29,6 +30,7 @@ typedef struct{
     float i_d, i_q, i_q_filt, i_d_filt;                     // D/Q currents
     float i_mag;											// Current magnitude
     float v_d, v_q;                                         // D/Q voltages
+//    float torque_max, v_q_max, i_q_des_max, dtc_u_max, dtc_v_max;	// Debug values //TODO: remove
     float dtc_u, dtc_v, dtc_w;                              // Terminal duty cycles
     float v_u, v_v, v_w;                                    // Terminal voltages
     float kp_d, kp_q, ki_d, ki_q, kd_d, kd_q, ki_fw, alpha;               // Current loop gains, current reference filter coefficient

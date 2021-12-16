@@ -2,7 +2,6 @@
 #include "math_ops.h"
 #include "lookup.h"
 
-
 float fast_fmaxf(float x, float y){
     /// Returns maximum of x, y ///
     return (((x)>(y))?(x):(y));
@@ -41,15 +40,15 @@ void limit(float *x, float min, float max){
     *x = fast_fmaxf(fast_fminf(*x, max), min);
     }
 
-int float_to_uint(float x, float x_min, float x_max, int bits){
+uint32_t float_to_uint(float x, float x_min, float x_max, uint32_t bits){
     /// Converts a float to an unsigned int, given range and number of bits ///
     float span = x_max - x_min;
     float offset = x_min;
-    return (int) ((x-offset)*((float)((1<<bits)-1))/span);
+    return (uint32_t) ((x-offset)*((float)((1<<bits)-1))/span);
     }
     
     
-float uint_to_float(int x_int, float x_min, float x_max, int bits){
+float uint_to_float(uint32_t x_int, float x_min, float x_max, uint32_t bits){
     /// converts unsigned int to float, given range and number of bits ///
     float span = x_max - x_min;
     float offset = x_min;

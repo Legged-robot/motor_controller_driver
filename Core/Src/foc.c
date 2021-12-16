@@ -6,6 +6,7 @@
  */
 
 #include "foc.h"
+#include "fsm.h"
 #include "adc.h"
 #include "tim.h"
 #include "position_sensor.h"
@@ -190,6 +191,10 @@ void reset_foc(ControllerStruct *controller)
     controller->v_d = 0;
     controller->fw_int = 0;
     controller->otw_flag = 0;
+//    // TODO: remove
+//    controller->i_q_des_max = 0;
+//    controller->torque_max = 0;
+//    controller->v_q_max = 0;
 
 }
 
@@ -298,6 +303,9 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
         controller->foc_i_a = controller->i_a;
         controller->foc_i_b = controller->i_b;
         controller->foc_i_c = controller->i_c;
+//        if (controller->torque_max < controller->i_q_des){	//before normalisation, i_q_des == torque_des //TODO:remove
+//     	   controller->torque_max = controller->i_q_des;
+//        }
        /// Commutation  ///
        dq0(controller->theta_elec, controller->foc_i_a, controller->foc_i_b, controller->foc_i_c, &controller->i_d, &controller->i_q);    //dq0 transform on currents - 3.8 us
 
@@ -312,7 +320,14 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        /* Filtered bus voltage */
        controller->v_bus_filt = (1.0f-VBUS_FILT_ALPHA)*controller->v_bus_filt + VBUS_FILT_ALPHA*controller->v_bus;
 
-       controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3; //TODO: remove sqrt(1/3)
+       if (controller->fsmstate != CALIBRATION_MODE){
+    	   controller->v_max = OVERMODULATION*controller->v_bus_filt*(DTC_MAX-DTC_MIN)*SQRT1_3;
+       }
+       else {
+    	   controller->v_max = MAX_CALIBRATION_VOLTAGE;	// Otherwise currents will be to large since first part of calibration is open loop mode control
+       }
+
+
        controller->i_max = I_MAX; //I_MAX*(!controller->otw_flag) + I_MAX_CONT*controller->otw_flag;
        controller->int_max = INTEGRAL_MAX_TO_VMAX_RATIO*controller->v_max;
 
@@ -349,6 +364,14 @@ void commutate(ControllerStruct *controller, EncoderStruct *encoder)
        abc(controller->theta_elec + 1.5f*DT*controller->dtheta_elec, controller->v_d, controller->v_q, &controller->v_u, &controller->v_v, &controller->v_w); //inverse dq0 transform on voltages
        svm(controller->v_bus, controller->v_u, controller->v_v, controller->v_w, &controller->dtc_u, &controller->dtc_v, &controller->dtc_w); //space vector modulation
 
+//       if (fabsf(controller->v_q_max) < fabsf(controller->v_q)){	//TODO:remove
+//    	   controller->v_q_max = controller->v_q;
+//    	   controller->i_q_des_max = controller->i_q_des;
+//    	   controller->dtc_u_max = controller->dtc_u;
+//    	   controller->dtc_v_max = controller->dtc_v;
+//       }
+
+
        set_dtc(controller);
 //       controller->loop_count = 0; //reset loop counter
 //       controller->prev_i_d_error = i_d_error;
@@ -380,7 +403,8 @@ void torque_control(ControllerStruct *controller)
 {
 
     float ee_torque_des = controller->kp*(controller->p_des - controller->theta_mech) + controller->t_ff + controller->kd*(controller->v_des - controller->dtheta_mech);
-    float motor_torque_des = ee_torque_des/(KT*GR);
+//    float motor_torque_des = ee_torque_des/(KT*GR);
+    float motor_torque_des = ee_torque_des/KT;
     // if(fabsf(motor_torque_des) < TORQUE_THRESHOLD){
     // 	controller->i_q_des = 0;
     //     controller->d_int = controller->d_int/1.9;	// Strategy to reduce integral accumulation

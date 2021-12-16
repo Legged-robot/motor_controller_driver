@@ -29,7 +29,7 @@
 			 fsm_enter_state(fsmstate);
 		 }
 	 }
-
+	 controller.fsmstate = fsmstate->state;
 	 switch(fsmstate->state){
 		 case MENU_MODE:
 			 break;
